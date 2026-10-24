@@ -1,0 +1,5 @@
+if BOARD_K230D_RTOS_DART_V1
+
+    config BOARD_NOT_SUPPORT_HW_RTC
+        def_bool y
+endif
