@@ -1,0 +1,556 @@
+diff --git a/kernel/bsp/maix3/app_canmv/main.c b/kernel/bsp/maix3/app_canmv/main.c
+index 59d58e2..c14994b 100644
+--- a/kernel/bsp/maix3/app_canmv/main.c
++++ b/kernel/bsp/maix3/app_canmv/main.c
+@@ -316,31 +316,8 @@ int main(void) {
+   rt_kprintf("nncase: %s\n", NNCASE_VERSION_);
+   rt_kprintf("##############################################################\n");
+ 
+-#ifdef RT_USING_SDIO
+-  if (g_sysctl_boot_mode == SYSCTL_BOOT_EMMC ||
+-      g_sysctl_boot_mode == SYSCTL_BOOT_SDCARD) {
+-    int boot_host = g_sysctl_boot_mode == SYSCTL_BOOT_EMMC ? 0 : 1;
+-    if (kd_sdhci_wait_card(boot_host,
+-                           rt_tick_from_millisecond(
+-                               MMCSD_CARD_DETECT_TIMEOUT_MS)) !=
+-        MMCSD_HOST_PLUGED) {
+-      rt_kprintf("no boot mmc device on SDIO%d\n", boot_host);
+-    }
+-  }
+-#endif //RT_USING_SDIO
+-
+-  mnt_mount_table();
+-  excute_sdcard_config();
+-
+-#if defined (RT_USING_SDIO) && defined (MOUNT_SECOND_CARD)
+-  mount_second_card();
+-#endif // MOUNT_SECOND_CARD
+-
+-#if defined (RT_RECOVERY_MPY_AUTO_EXEC_PY)
+-  extern int check_delete_file_mark(void);
+-  check_delete_file_mark();
+-#endif
+-
++  /* Enumerate USB before storage discovery, mounting or formatting. The CDC
++   * recovery channel must remain available when the filesystems are broken. */
+ #ifdef ENABLE_CHERRY_USB
+   void *usb_base;
+   const void *usb_dev_addr[2] = {(void *)0x91500000UL, (void *)0x91540000UL};
+@@ -382,12 +359,46 @@ int main(void) {
+ 
+ #if defined (ENABLE_CHERRY_USB_DEVICE)
+   usb_base = (void *)rt_ioremap((void *)usb_dev_addr[CHERRY_USB_DEVICE_USING_DEV], 0x10000);
+-  board_usb_device_init(usb_base);
++  int usb_ret = board_usb_device_init(usb_base);
++  if (usb_ret < 0) {
++    rt_kprintf("USB%d device initialization failed: %d\n", CHERRY_USB_DEVICE_USING_DEV, usb_ret);
++  }
+ #endif // ENABLE_CHERRY_USB_DEVICE
+ 
+ #endif // ENABLE_CHERRY_USB_OTG
+ #endif //ENABLE_CHERRY_USB
+ 
++#ifdef RT_USING_SDIO
++  if (g_sysctl_boot_mode == SYSCTL_BOOT_EMMC ||
++      g_sysctl_boot_mode == SYSCTL_BOOT_SDCARD) {
++    int boot_host = g_sysctl_boot_mode == SYSCTL_BOOT_EMMC ? 0 : 1;
++    if (kd_sdhci_wait_card(boot_host,
++                           rt_tick_from_millisecond(
++                               MMCSD_CARD_DETECT_TIMEOUT_MS)) !=
++        MMCSD_HOST_PLUGED) {
++      rt_kprintf("no boot mmc device on SDIO%d\n", boot_host);
++    }
++  }
++#endif //RT_USING_SDIO
++
++  mnt_mount_table();
++  excute_sdcard_config();
++
++#if defined (RT_USING_SDIO) && defined (MOUNT_SECOND_CARD)
++  mount_second_card();
++#endif // MOUNT_SECOND_CARD
++
++#if defined (RT_RECOVERY_MPY_AUTO_EXEC_PY)
++  extern int check_delete_file_mark(void);
++  check_delete_file_mark();
++#endif
++
++#if defined(ENABLE_CHERRY_USB_DEVICE) || defined(ENABLE_CHERRY_USB_OTG)
++  /* MTP needs mounted storage, but registering its descriptors and serving
++   * EP0/CDC do not. Start its responder only after the mount results exist. */
++  board_usb_device_storage_init();
++#endif
++
+ #if defined CONFIG_BOARD_K230D_CANMV_LABPLUS_AI_CAMERA \
+   || CONFIG_BOARD_K230D_CANMV_LABPLUS_AI_CAMERA_V2
+ 
+diff --git a/kernel/bsp/maix3/components/CherryUSB/core/usbd_core.c b/kernel/bsp/maix3/components/CherryUSB/core/usbd_core.c
+index e927023..a76be6a 100755
+--- a/kernel/bsp/maix3/components/CherryUSB/core/usbd_core.c
++++ b/kernel/bsp/maix3/components/CherryUSB/core/usbd_core.c
+@@ -1406,6 +1406,10 @@ int usbd_initialize(uint8_t busid, uint32_t reg_base, void (*event_handler)(uint
+ 
+     g_usbd_core[busid].event_handler = event_handler;
+     ret = usb_dc_init(busid);
++    if (ret < 0) {
++        USB_LOG_ERR("usb device controller initialization failed: %d\r\n", ret);
++        return ret;
++    }
+     usbd_class_event_notify_handler(busid, USBD_EVENT_INIT, NULL);
+     g_usbd_core[busid].event_handler(busid, USBD_EVENT_INIT);
+     return ret;
+diff --git a/kernel/bsp/maix3/components/CherryUSB/port/dwc2/usb_dc_dwc2.c b/kernel/bsp/maix3/components/CherryUSB/port/dwc2/usb_dc_dwc2.c
+index 6ab4dc8..6ee9570 100644
+--- a/kernel/bsp/maix3/components/CherryUSB/port/dwc2/usb_dc_dwc2.c
++++ b/kernel/bsp/maix3/components/CherryUSB/port/dwc2/usb_dc_dwc2.c
+@@ -5,6 +5,7 @@
+  */
+ #include "usbd_core.h"
+ #include "usb_dwc2_reg.h"
++#include "usb_osal.h"
+ 
+ // clang-format off
+ #if   defined ( __CC_ARM )
+@@ -648,6 +649,14 @@ __WEAK void usb_dc_low_level_init(void)
+ {
+ }
+ 
++/* Platform glue may need to reset clocks/PHYs before the DWC2 core is
++ * touched.  Keep the legacy void init hook, but let a platform report a
++ * failed reset instead of silently continuing with a half-reset controller. */
++__WEAK int usb_dc_low_level_init_status(void)
++{
++    return 0;
++}
++
+ __WEAK void usb_dc_low_level_deinit(void)
+ {
+ }
+@@ -664,6 +673,12 @@ int usb_dc_init(uint8_t busid)
+     usb_memset(&g_dwc2_udc, 0, sizeof(struct dwc2_udc));
+ 
+     usb_dc_low_level_init();
++    ret = usb_dc_low_level_init_status();
++    if (ret < 0) {
++        USB_LOG_ERR("dwc2 low-level USB reset failed\r\n");
++        usb_dc_low_level_deinit();
++        return ret;
++    }
+ 
+     /*
+         Full-Speed PHY Interface Type (FSPhyType)
+@@ -704,14 +719,14 @@ int usb_dc_init(uint8_t busid)
+ 
+     if (endpoints < CONFIG_USBDEV_EP_NUM) {
+         USB_LOG_ERR("dwc2 has less endpoints than config, please check\r\n");
+-        while (1) {
+-        }
++        ret = -1;
++        goto init_failed;
+     }
+ 
+     if (CONFIG_USBDEV_EP_NUM > DWC2_DEVICE_TX_FIFO_COUNT) {
+         USB_LOG_ERR("dwc2 device fifo config supports up to %u endpoint indexes, please check\r\n", DWC2_DEVICE_TX_FIFO_COUNT);
+-        while (1) {
+-        }
++        ret = -1;
++        goto init_failed;
+     }
+ 
+     USB_OTG_DEV->DCTL |= USB_OTG_DCTL_SDIS;
+@@ -722,9 +737,29 @@ int usb_dc_init(uint8_t busid)
+     USB_OTG_GLB->GCCFG = usbd_get_dwc2_gccfg_conf(USBD_BASE);
+ 
+     ret = dwc2_core_init();
++    if (ret < 0) {
++        USB_LOG_ERR("dwc2 core reset failed\r\n");
++        goto init_failed;
++    }
++
++    /* A core reset can change DCTL. Keep the device detached until every
++     * register and FIFO is ready, including when taking over from BootROM. */
++    USB_OTG_DEV->DCTL |= USB_OTG_DCTL_SDIS;
++    USB_OTG_GLB->GAHBCFG &= ~USB_OTG_GAHBCFG_GINT;
++
++    /* Restart the PHY clock before waiting for the mode switch. */
++    USB_OTG_PCGCCTL = 0U;
+ 
+     /* Force Device Mode*/
+     dwc2_set_mode(USB_OTG_MODE_DEVICE);
++    for (uint32_t elapsed = 0U; USB_OTG_GLB->GINTSTS & USB_OTG_GINTSTS_CMOD; elapsed++) {
++        if (elapsed >= 100U) {
++            USB_LOG_ERR("dwc2 device mode switch timed out\r\n");
++            ret = -1;
++            goto init_failed;
++        }
++        usb_osal_msleep(1);
++    }
+ 
+     /* B-peripheral session valid override enable */
+     // USB_OTG_GLB->GOTGCTL |= USB_OTG_GOTGCTL_BVALOEN;
+@@ -767,8 +802,8 @@ int usb_dc_init(uint8_t busid)
+ #ifdef CHERRY_USB_DEVICE_USING_DMA
+     if (((USB_OTG_GLB->GHWCFG2 & (0x3U << 3)) >> 3) != 2) {
+         USB_LOG_ERR("This dwc2 version does not support dma mode, so stop working\r\n");
+-        while (1) {
+-        }
++        ret = -1;
++        goto init_failed;
+     }
+ 
+     USB_OTG_DEV->DCFG &= ~USB_OTG_DCFG_DESCDMA;
+@@ -795,20 +830,40 @@ int usb_dc_init(uint8_t busid)
+     if ((CONFIG_USB_DWC2_RXALL_FIFO_SIZE + CONFIG_USB_DWC2_TX0_FIFO_SIZE) > dfifo_depth) {
+         USB_LOG_ERR("dwc2 rx+ep0 fifo needs %u words but controller has only %u words\r\n",
+                     (uint32_t)(CONFIG_USB_DWC2_RXALL_FIFO_SIZE + CONFIG_USB_DWC2_TX0_FIFO_SIZE), dfifo_depth);
+-        while (1) {
+-        }
++        ret = -1;
++        goto init_failed;
+     }
+ 
+-    dwc2_repack_txfifos();
++    ret = dwc2_repack_txfifos();
++    if (ret < 0) {
++        USB_LOG_ERR("dwc2 fifo layout failed\r\n");
++        goto init_failed;
++    }
+     USB_LOG_INFO("dwc2 dfifo depth %u words, rx min:%u ep0-tx:%u, per-ep tx allocated on open\r\n",
+                  dfifo_depth, (uint32_t)CONFIG_USB_DWC2_RXALL_FIFO_SIZE, (uint32_t)CONFIG_USB_DWC2_TX0_FIFO_SIZE);
+ 
+     ret = dwc2_flush_txfifo(0x10U);
++    if (ret < 0) {
++        USB_LOG_ERR("dwc2 tx fifo flush timed out\r\n");
++        goto init_failed;
++    }
+     ret = dwc2_flush_rxfifo();
++    if (ret < 0) {
++        USB_LOG_ERR("dwc2 rx fifo flush timed out\r\n");
++        goto init_failed;
++    }
+ 
++    /* Give the host a visible disconnect before exposing EP0 again. */
++    usb_osal_msleep(20);
+     USB_OTG_GLB->GAHBCFG |= USB_OTG_GAHBCFG_GINT;
+     USB_OTG_DEV->DCTL &= ~USB_OTG_DCTL_SDIS;
+ 
++    return 0;
++
++init_failed:
++    USB_OTG_GLB->GAHBCFG &= ~USB_OTG_GAHBCFG_GINT;
++    USB_OTG_DEV->DCTL |= USB_OTG_DCTL_SDIS;
++    usb_dc_low_level_deinit();
+     return ret;
+ }
+ 
+diff --git a/kernel/bsp/maix3/components/CherryUSB/port/dwc2/usb_glue_kendryte.c b/kernel/bsp/maix3/components/CherryUSB/port/dwc2/usb_glue_kendryte.c
+index 5062b5f..a9667e0 100644
+--- a/kernel/bsp/maix3/components/CherryUSB/port/dwc2/usb_glue_kendryte.c
++++ b/kernel/bsp/maix3/components/CherryUSB/port/dwc2/usb_glue_kendryte.c
+@@ -5,6 +5,7 @@
+  */
+ #include <rtthread.h>
+ #include <rthw.h>
++#include <ioremap.h>
+ #include "usb_config.h"
+ #include "usb_log.h"
+ #include <riscv_io.h>
+@@ -121,6 +122,8 @@ void usb_hc_low_level_deinit(void)
+ 
+ // USB Device
+ #if defined (ENABLE_CHERRY_USB_DEVICE) 
++static int usb_dc_low_level_init_result;
++
+ static void usb_dc_interrupt_cb(int irq, void *arg_pv)
+ {
+     extern void USBD_IRQHandler(uint8_t busid);
+@@ -130,15 +133,29 @@ uint32_t usbd_get_dwc2_gccfg_conf(uint32_t reg_base)
+ {
+     return 0;
+ }
++
++int usb_dc_low_level_init_status(void)
++{
++    return usb_dc_low_level_init_result;
++}
++
+ #if defined (CHERRY_USB_DEVICE_USING_DEV0)
+ void usb_dc_low_level_init(void)
+ {
++    usb_dc_low_level_init_result = 0;
+     // sysctl_reset_hw_done((volatile uint32_t *)0x9110103c, 0, 28);
+     if (!sysctl_reset(SYSCTL_RESET_USB0)) {
+         USB_LOG_ERR("reset usb0 fail\n");
++        usb_dc_low_level_init_result = -1;
++        return;
+     }
+ 
+     uint32_t *hs_reg = (uint32_t *)rt_ioremap((void *)(0x91585000 + 0x7C), 0x1000);
++    if (hs_reg == RT_NULL) {
++        USB_LOG_ERR("map usb0 PHY control failed\n");
++        usb_dc_low_level_init_result = -1;
++        return;
++    }
+     *hs_reg = 0x37;
+     rt_iounmap(hs_reg);
+ 
+@@ -153,12 +170,20 @@ void usb_dc_low_level_deinit(void)
+ #elif defined(CHERRY_USB_DEVICE_USING_DEV1)
+ void usb_dc_low_level_init(void)
+ {
++    usb_dc_low_level_init_result = 0;
+     // sysctl_reset_hw_done((volatile uint32_t *)0x9110103c, 1, 29);
+     if (!sysctl_reset(SYSCTL_RESET_USB1)) {
+         USB_LOG_ERR("reset usb1 fail\n");
++        usb_dc_low_level_init_result = -1;
++        return;
+     }
+ 
+     uint32_t *hs_reg = (uint32_t *)rt_ioremap((void *)(0x91585000 + 0x9C), 0x1000);
++    if (hs_reg == RT_NULL) {
++        USB_LOG_ERR("map usb1 PHY control failed\n");
++        usb_dc_low_level_init_result = -1;
++        return;
++    }
+     *hs_reg = 0x37;
+     rt_iounmap(hs_reg);
+ 
+diff --git a/kernel/bsp/maix3/components/canmv_usb/usbd_desc.c b/kernel/bsp/maix3/components/canmv_usb/usbd_desc.c
+index 497b59a..2e88101 100755
+--- a/kernel/bsp/maix3/components/canmv_usb/usbd_desc.c
++++ b/kernel/bsp/maix3/components/canmv_usb/usbd_desc.c
+@@ -82,8 +82,18 @@ void board_usb_device_register(void)
+ }
+ 
+ /*****************************************************************************/
+-void board_usb_device_init(void* usb_base)
++int board_usb_device_init(void* usb_base)
+ {
++    if (usb_base == RT_NULL) {
++        return -RT_ENOMEM;
++    }
+     board_usb_device_register();
+-    usbd_initialize(USB_DEVICE_BUS_ID, (uint32_t)(uint64_t)usb_base, board_usb_device_event_handler);
++    return usbd_initialize(USB_DEVICE_BUS_ID, (uint32_t)(uint64_t)usb_base, board_usb_device_event_handler);
++}
++
++void board_usb_device_storage_init(void)
++{
++#if defined(CHERRY_USB_DEVICE_FUNC_CDC_MTP) || defined(CHERRY_USB_DEVICE_FUNC_HID_CDC_MTP)
++    canmv_usb_device_mtp_start();
++#endif
+ }
+diff --git a/kernel/bsp/maix3/components/canmv_usb/usbd_desc.h b/kernel/bsp/maix3/components/canmv_usb/usbd_desc.h
+index b8ce04a..f663dd7 100644
+--- a/kernel/bsp/maix3/components/canmv_usb/usbd_desc.h
++++ b/kernel/bsp/maix3/components/canmv_usb/usbd_desc.h
+@@ -86,6 +86,7 @@ extern void canmv_usb_device_hid_on_disconnected(void);
+ extern void canmv_usb_device_hid_init(void);
+ 
+ extern void canmv_usb_device_mtp_init(void);
++extern void canmv_usb_device_mtp_start(void);
+ 
+ extern void canmv_usb_device_uvc_on_connected(void);
+ extern void canmv_usb_device_uvc_on_disconnected(void);
+@@ -93,6 +94,7 @@ extern void canmv_usb_device_uvc_init(void);
+ 
+ extern void board_usb_device_event_handler(uint8_t busid, uint8_t event);
+ extern void board_usb_device_register(void);
+-extern void board_usb_device_init(void* usb_base);
++extern int board_usb_device_init(void* usb_base);
++extern void board_usb_device_storage_init(void);
+ 
+ extern void canmv_usb_device_adb_init(void);
+diff --git a/kernel/bsp/maix3/components/canmv_usb/usbd_mtp.c b/kernel/bsp/maix3/components/canmv_usb/usbd_mtp.c
+index 04f9026..7b18800 100755
+--- a/kernel/bsp/maix3/components/canmv_usb/usbd_mtp.c
++++ b/kernel/bsp/maix3/components/canmv_usb/usbd_mtp.c
+@@ -239,7 +239,11 @@ static void mtp_thread(void *arg)
+ 
+     while (1) {
+         rt_event_control(mtp_event, RT_IPC_CMD_RESET, NULL);
+-        rt_event_recv(mtp_event, EV_CONFIGURED, RT_EVENT_FLAG_AND | RT_EVENT_FLAG_CLEAR, RT_WAITING_FOREVER, NULL);
++        /* Enumeration may finish before the storage thread starts. Resetting
++         * its event must not make an already configured device wait forever. */
++        if (!g_usb_device_connected || !usb_device_is_configured(USB_DEVICE_BUS_ID)) {
++            rt_event_recv(mtp_event, EV_CONFIGURED, RT_EVENT_FLAG_AND | RT_EVENT_FLAG_CLEAR, RT_WAITING_FOREVER, NULL);
++        }
+         rt_event_control(mtp_event, RT_IPC_CMD_RESET, NULL);
+         while (1) {
+             int ret = mtp_incoming_packet(ctx);
+@@ -324,7 +328,9 @@ static int mtp_class_interface_request_handler(uint8_t busid, struct usb_setup_p
+             if ((setup->bmRequestType & USB_REQUEST_DIR_MASK) != USB_REQUEST_DIR_IN || setup->wLength < MTP_DEVICE_STATUS_SIZE) {
+                 return -1;
+             }
+-            if (mtp_context && mtp_context->cancel_status_pending) {
++            if (!mtp_tid) {
++                mtp_set_device_status(data, len, MTP_RESPONSE_DEVICE_BUSY);
++            } else if (mtp_context && mtp_context->cancel_status_pending) {
+                 mtp_set_device_status(data, len, MTP_RESPONSE_TRANSACTION_CANCELLED);
+                 mtp_context->cancel_status_pending = 0;
+             } else {
+@@ -567,6 +573,12 @@ void canmv_usb_device_mtp_init(void)
+     usbd_add_endpoint(USB_DEVICE_BUS_ID, &mtp_ep_data[MTP_IN_EP_IDX]);
+     usbd_add_endpoint(USB_DEVICE_BUS_ID, &mtp_ep_data[MTP_INT_EP_IDX]);
+ 
+-    mtp_device_init();
++}
++
++void canmv_usb_device_mtp_start(void)
++{
++    if (!mtp_tid) {
++        mtp_device_init();
++    }
+ }
+ #endif
+diff --git a/kernel/bsp/maix3/drivers/interdrv/gnne/ai2d_dev.c b/kernel/bsp/maix3/drivers/interdrv/gnne/ai2d_dev.c
+index cea9eaa..4945367 100644
+--- a/kernel/bsp/maix3/drivers/interdrv/gnne/ai2d_dev.c
++++ b/kernel/bsp/maix3/drivers/interdrv/gnne/ai2d_dev.c
+@@ -39,11 +39,8 @@ struct ai_2d_dev_handle {
+ 
+ 
+ #ifdef  AI2D_LOG_ENABLE
+-static int ai_2d_log(const char *fmt, ...)
+-{
+-    rt_kprintf(fmt);
+-    return 0;
+-}
++/* Forward every format argument, including the function name in init logs. */
++#define ai_2d_log(...) rt_kprintf(__VA_ARGS__)
+ #else
+ static int ai_2d_log(const char *fmt, ...)
+ {
+diff --git a/kernel/bsp/maix3/board/dart_camera.c b/kernel/bsp/maix3/board/dart_camera.c
+new file mode 100644
+index 0000000..4991315
+--- /dev/null
++++ b/kernel/bsp/maix3/board/dart_camera.c
+@@ -0,0 +1,36 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++
++#include "rtconfig.h"
++
++#ifdef CONFIG_BOARD_K230D_RTOS_DART_V1
++
++#include <rtthread.h>
++
++#include "drv_gpio.h"
++
++#define DART_CAMERA_TRIG1_GPIO 2
++#define DART_CAMERA_PWDN_GPIO  4
++
++static int dart_camera_pin_init(void)
++{
++    rt_err_t ret;
++
++    /* Free-running capture: do not generate external trigger pulses. */
++    ret = kd_pin_mode(DART_CAMERA_TRIG1_GPIO, GPIO_DM_OUTPUT);
++    if (ret != RT_EOK)
++        return ret;
++    ret = kd_pin_write(DART_CAMERA_TRIG1_GPIO, GPIO_PV_LOW);
++    if (ret != RT_EOK)
++        return ret;
++
++    /* This board powers SC038HGS down at low level and enables it at high. */
++    ret = kd_pin_mode(DART_CAMERA_PWDN_GPIO, GPIO_DM_OUTPUT);
++    if (ret != RT_EOK)
++        return ret;
++    return kd_pin_write(DART_CAMERA_PWDN_GPIO, GPIO_PV_HIGH);
++}
++
++/* After kd_pin_init (device sequence 010), before MPP sensor probing. */
++INIT_DEVICE_EXPORT_SEQ(dart_camera_pin_init, 1);
++
++#endif
+diff --git a/kernel/bsp/maix3/configs/k230d_rtos_dart_v1_defconfig b/kernel/bsp/maix3/configs/k230d_rtos_dart_v1_defconfig
+new file mode 100644
+index 0000000..275c821
+--- /dev/null
++++ b/kernel/bsp/maix3/configs/k230d_rtos_dart_v1_defconfig
+@@ -0,0 +1,85 @@
++# Generated by Kconfiglib (https://github.com/ulfalizer/Kconfiglib)
++CONFIG_RT_NAME_MAX=20
++CONFIG_RT_USING_SMART=y
++CONFIG_RT_ALIGN_SIZE=64
++CONFIG_RT_TICK_PER_SECOND=1000
++CONFIG_IDLE_THREAD_STACK_SIZE=16384
++CONFIG_RT_TIMER_THREAD_STACK_SIZE=16384
++CONFIG_RT_USING_SIGNALS=y
++CONFIG_RT_USING_MEMHEAP=y
++CONFIG_RT_USING_MEMHEAP_AS_HEAP=y
++CONFIG_RT_USING_DEVICE_OPS=y
++CONFIG_RT_CONSOLEBUF_SIZE=256
++CONFIG_RT_CONSOLE_DEVICE_NAME="uart0"
++CONFIG_RT_USING_USERSPACE=y
++CONFIG_KERNEL_VADDR_START=0x150000000
++CONFIG_RT_MAIN_THREAD_STACK_SIZE=16384
++CONFIG_FINSH_THREAD_STACK_SIZE=81920
++CONFIG_FINSH_CMD_SIZE=1024
++CONFIG_FINSH_ARG_MAX=100
++CONFIG_MSH_WAIT_LWP_FINISH=y
++CONFIG_DFS_FILESYSTEMS_MAX=16
++CONFIG_DFS_FILESYSTEM_TYPES_MAX=6
++CONFIG_DFS_FD_MAX=128
++CONFIG_RT_USING_DFS_ELMFAT=y
++CONFIG_RT_DFS_ELM_DRIVES=4
++CONFIG_RT_USING_DFS_ROMFS=y
++CONFIG_RT_USING_DFS_TMPFS=y
++CONFIG_RT_USING_DFS_PROCFS=y
++CONFIG_RT_SYSTEM_WORKQUEUE_STACKSIZE=20480
++CONFIG_RT_SYSTEM_WORKQUEUE_PRIORITY=17
++CONFIG_RT_SERIAL_USING_DMA=y
++CONFIG_RT_USING_HWTIMER=y
++CONFIG_RT_USING_CPUTIME=y
++CONFIG_RT_USING_I2C=y
++CONFIG_RT_USING_ADC=y
++CONFIG_RT_USING_DEVMEM=y
++CONFIG_RT_USING_PWM=y
++CONFIG_RT_USING_PM=y
++CONFIG_RT_USING_SOFT_RTC=y
++CONFIG_RT_USING_SDIO=y
++CONFIG_RT_SDIO_STACK_SIZE=10240
++CONFIG_RT_SDIO_THREAD_PRIORITY=4
++CONFIG_RT_MMCSD_STACK_SIZE=32768
++CONFIG_RT_USING_SPI=y
++CONFIG_RT_USING_QSPI=y
++CONFIG_RT_USING_WDT=y
++CONFIG_SAL_USING_POSIX=y
++CONFIG_SAL_USING_AF_UNIX=y
++CONFIG_RT_USING_LWIP=y
++CONFIG_RT_LWIP_MEM_ALIGNMENT=8
++CONFIG_LWIP_USING_DHCPD=y
++CONFIG_RT_RECOVERY_MPY_AUTO_EXEC_PY=y
++CONFIG_RT_BOARD_CHIP_K230D=y
++CONFIG_RT_USING_CIPHER=y
++CONFIG_RT_USING_AES=y
++CONFIG_RT_USING_HASH=y
++CONFIG_RT_USING_PUFS=y
++CONFIG_RT_USING_FFT=y
++CONFIG_RT_USING_GPIO=y
++CONFIG_RT_USING_HW_TIMER0=y
++CONFIG_RT_USING_HW_TIMER1=y
++CONFIG_RT_USING_HW_TIMER2=y
++CONFIG_RT_USING_HW_TIMER3=y
++CONFIG_RT_USING_HW_TIMER4=y
++CONFIG_RT_USING_HW_TIMER5=y
++CONFIG_RT_USING_I2C1=y
++CONFIG_RT_USING_I2C2=y
++CONFIG_RT_USING_I2C3=y
++CONFIG_RT_USING_PDMA=y
++CONFIG_RT_USING_SDIO0=y
++CONFIG_RT_SDIO0_EMMC=y
++CONFIG_RT_SDIO0_1V8=y
++CONFIG_SDIO0_BUS_WIDTH_8BIT=y
++CONFIG_RT_USING_SDIO1=y
++CONFIG_RT_USING_SPI1=y
++CONFIG_RT_USING_SPI2=y
++CONFIG_RT_USING_TS=y
++CONFIG_DRV_TS_USE_RT_DEVICE=y
++CONFIG_ENABLE_CHERRY_USB=y
++CONFIG_ENABLE_CHERRY_USB_DEVICE=y
++CONFIG_ENABLE_CANMV_NETWORK_MGMT_DEV=y
++CONFIG_ENABLE_CANMV_MISC_DEV=y
++CONFIG_PKG_USING_NETUTILS=y
++CONFIG_PKG_NETUTILS_NTP=y
++CONFIG___STACKSIZE__=65536

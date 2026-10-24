@@ -49,6 +49,9 @@ prepare: .autoconf rm_image
 
 
 %_defconfig: $(KCONF)
+	@if [ "$@" = "k230d_canmv_dart_v1_defconfig" ]; then \
+		$(PYTHON) $(SDK_TOOLS_DIR)/prepare_dart_micropython.py || exit $$?; \
+	fi
 	$(call del_mark)
 
 	$(call gen_kconfig,$(SDK_CANMV_SRC_DIR),canmv)
@@ -126,6 +129,10 @@ opensbi-distclean:
 canmv: prepare opensbi
 ifeq ($(CONFIG_SDK_ENABLE_CANMV),y)
 	@$(MAKE) -C $(SDK_CANMV_SRC_DIR) all
+	@if [ -d "$(SDK_BOARD_DIR)/micropython/sdcard" ]; then \
+		rsync -aq --exclude='__pycache__' --exclude='*.pyc' \
+			"$(SDK_BOARD_DIR)/micropython/sdcard/" "$(SDK_BUILD_IMAGES_DIR)/sdcard/"; \
+	fi
 endif
 
 canmv-clean:

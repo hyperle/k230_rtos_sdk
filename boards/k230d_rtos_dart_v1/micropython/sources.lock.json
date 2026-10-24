@@ -1,0 +1,130 @@
+{
+  "sdk_base": "11ef1a0f02a0d2ccbc4bafceb0e335dfe11923c2",
+  "projects": [
+    {
+      "path": "src/uboot/uboot",
+      "url": "https://github.com/canmv-k230/u-boot",
+      "revision": "56a131d12108009012eca0204e7dd610a3e7d618",
+      "patch": "patches/src-uboot-uboot.patch",
+      "sha256": "d7514c39119234f1d6786e1b2fd0f5e5b7ad27c14586c4bc242513dbbebc8671"
+    },
+    {
+      "path": "src/opensbi/opensbi",
+      "url": "https://github.com/canmv-k230/opensbi",
+      "revision": "ea1ceab9f0af65251e4a5c7d943a1cfa5e9002d6"
+    },
+    {
+      "path": "src/rtsmart/rtsmart",
+      "url": "https://github.com/canmv-k230/rtsmart",
+      "revision": "56852a6adb08305fdc3a576fb763e4d878b03d97",
+      "patch": "patches/src-rtsmart-rtsmart.patch",
+      "sha256": "8c98280ae1b180289b5fa9bd2b2a2e137b01fdcb85fc7daac00549444c7da005"
+    },
+    {
+      "path": "src/rtsmart/libs",
+      "url": "https://github.com/canmv-k230/k230_rtsmart_lib",
+      "revision": "4964b24f020825216a3095ba7ba998ae6e76bce7"
+    },
+    {
+      "path": "src/rtsmart/libs/kmodel",
+      "url": "https://github.com/canmv-k230/nncase_kmodels_v2_11",
+      "revision": "830f035e8907b89015e15c4a85cf7f59e06c4175"
+    },
+    {
+      "path": "src/rtsmart/examples",
+      "url": "https://github.com/canmv-k230/k230_rtsmart_examples",
+      "revision": "0eccd20d2d26b237171a6c7b6a3479b7640f4dc6",
+      "patch": "patches/src-rtsmart-examples.patch",
+      "sha256": "92a59e61698c3cba2a73b914549ee46696b78602efba697565942bf0fafe2e92"
+    },
+    {
+      "path": "src/rtsmart/mpp",
+      "url": "https://github.com/canmv-k230/mpp",
+      "revision": "2b7e6a99a77e08434ddfde1c73604250a7948160",
+      "patch": "patches/src-rtsmart-mpp.patch",
+      "sha256": "827b2bca70957cd43853f6ea3c8f9e8a7a7e2b0bc72b367ec308fc7922987e94"
+    },
+    {
+      "path": "src/rtsmart/rtsmart/kernel/bsp/maix3/drivers/extdrv/aic8800/firmware",
+      "url": "https://github.com/canmv-k230/aic8800_fw",
+      "revision": "e5bcfd0332d7551cf659b1ae9b50c8648870928b"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/freetype/freetype",
+      "url": "https://github.com/freetype/freetype",
+      "revision": "1452355de99d22b0cba6ccc17bf5cdf3682ef61e"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/mbedtls/mbedtls",
+      "url": "https://github.com/canmv-k230/mbedtls",
+      "revision": "a3ff9bce6b1c554a91bb3ced0f83046442a1694c"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/mqttclient/mqttclient",
+      "url": "https://github.com/jiejieTop/mqttclient",
+      "revision": "956e0c8dcac02d4b107ccb49f1990c7718b6b585"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/lvgl/lvgl",
+      "url": "https://github.com/lvgl/lvgl",
+      "revision": "c210a4efa2f474d0223d3e91c79963e1ae4ac0bc"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/cjson/cJSON",
+      "url": "https://github.com/DaveGamble/cJSON",
+      "revision": "fb16e5cf358798aabb049655975cde8427101056"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/libwebsockets/libwebsockets",
+      "url": "https://github.com/warmcat/libwebsockets",
+      "revision": "ff5a3aa702d8864caa23931fc508df099cc3e816"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/nimble/nimble",
+      "url": "https://github.com/apache/mynewt-nimble",
+      "revision": "70da7f3a05c3ded36c08c56e481fb400c5c29bac"
+    },
+    {
+      "path": "src/rtsmart/examples/3rd-party/iperf/iperf",
+      "url": "https://github.com/esnet/iperf",
+      "revision": "c9b74229d0d9bfec6d2307b66b43c29a7665ad0b"
+    },
+    {
+      "path": "src/canmv",
+      "url": "https://github.com/kendryte/canmv_k230",
+      "revision": "791c1ceee8acb4699d59d8dbf8f043ea3940a766",
+      "patch": "patches/src-canmv.patch",
+      "sha256": "13fd4c6ed8571f78b350b7d77bde046578770cdebc8bf6ece2aa22021a36e6fe"
+    },
+    {
+      "path": "src/canmv/micropython",
+      "url": "https://github.com/canmv-k230/micropython",
+      "revision": "0295137e60c0de862c8ee72d81c88d9e57e3973b"
+    },
+    {
+      "path": "src/canmv/micropython/lib/micropython-lib",
+      "url": "https://github.com/micropython/micropython-lib",
+      "revision": "e025c843b60e93689f0f991d753010bb5bd6a722"
+    },
+    {
+      "path": "src/canmv/micropython/lib/mynewt-nimble",
+      "url": "https://github.com/micropython/mynewt-nimble",
+      "revision": "42849560ba7906f023f61e5f7ff3709ba2c1dfca"
+    },
+    {
+      "path": "src/canmv/resources/ybsdcard",
+      "url": "https://github.com/canmv-k230/ybsdcard",
+      "revision": "c6ce8fab643c8aad22b0db97b9ff1f10d4fd8d94"
+    },
+    {
+      "path": "src/canmv/port/3rd-party/lv_bindings/lvgl",
+      "url": "https://github.com/lvgl/lvgl",
+      "revision": "1bfdecf585bb50fbb22ed1c38450b5c9eb600196"
+    },
+    {
+      "path": "src/canmv/port/3rd-party/lv_bindings/pycparser",
+      "url": "https://github.com/eliben/pycparser",
+      "revision": "3cf6bf5eb16f5eadd4a058e41596145c407a79ad"
+    }
+  ]
+}

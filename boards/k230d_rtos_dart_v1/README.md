@@ -12,7 +12,10 @@
   in the original board configuration. Validate this setting on hardware.
 - RT-Smart inherits the U-Boot pinmux and uses software RTC, consistent
   with this board's `BOARD_NOT_SUPPORT_HW_RTC` declaration.
-- This board runs RT-Smart applications; CanMV/MicroPython is disabled.
+- `k230d_rtos_dart_v1_defconfig` runs RT-Smart applications with CanMV
+  disabled. For the custom MicroPython firmware, select
+  `k230d_canmv_dart_v1_defconfig` and follow the
+  [MicroPython build and usage guide](MICROPYTHON.md).
 - After mounting the filesystems, RT-Smart runs `/sdcard/app/launcher &`.
   Application preloading (Fast Boot Configuration) is disabled, so the
   launcher is loaded from the eMMC application partition.
