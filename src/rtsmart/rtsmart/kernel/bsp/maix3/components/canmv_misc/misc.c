@@ -1,0 +1,833 @@
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <sys/types.h>
+#include <time.h>
+
+#include <rtthread.h>
+#include <dfs_file.h>
+#include <dfs_fs.h>
+#include <lwp_user_mm.h>
+
+#include "board.h"
+#include "tick.h"
+#include "ioremap.h"
+
+#include "sdk_version.h"
+
+#ifdef RT_USING_LWP
+#include <lwp.h>
+#include <mmu.h>
+#include <page.h>
+#endif
+#ifndef ARCH_PAGE_SIZE
+#define ARCH_PAGE_SIZE 0
+#endif
+
+#ifdef RT_USING_USAGE
+#include "usage.h"
+#endif
+
+#ifdef PKG_NETUTILS_NTP
+  #include "ntp.h"
+#endif
+
+#if defined (CONFIG_ENABLE_ROTARY_ENCODER)
+  #include "rotary_encoder.h"
+#endif
+
+#if defined (RT_USING_TOUCH)
+#include "drv_touch.h"
+#endif
+
+#include "dfs_posix.h"
+
+struct misc_dev_handle {
+  int cmd;
+  int (*func)(void *args);
+};
+
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+typedef struct {
+  rt_list_t *list;
+  rt_list_t **array;
+  rt_uint8_t type;
+  int nr;     /* input: max nr, can't be 0 */
+  int nr_out; /* out: got nr */
+} list_get_next_t;
+
+static void list_find_init(list_get_next_t *p, rt_uint8_t type,
+                           rt_list_t **array, int nr) {
+  struct rt_object_information *info;
+  rt_list_t *list;
+
+  info = rt_object_get_information((enum rt_object_class_type)type);
+  list = &info->object_list;
+
+  p->list = list;
+  p->type = type;
+  p->array = array;
+  p->nr = nr;
+  p->nr_out = 0;
+}
+
+static rt_list_t *list_get_next(rt_list_t *current, list_get_next_t *arg) {
+  int first_flag = 0;
+  rt_ubase_t level;
+  rt_list_t *node, *list;
+  rt_list_t **array;
+  int nr;
+
+  arg->nr_out = 0;
+
+  if (!arg->nr || !arg->type) {
+    return (rt_list_t *)RT_NULL;
+  }
+
+  list = arg->list;
+
+  if (!current) /* find first */
+  {
+    node = list;
+    first_flag = 1;
+  } else {
+    node = current;
+  }
+
+  level = rt_hw_interrupt_disable();
+
+  if (!first_flag) {
+    struct rt_object *obj;
+    /* The node in the list? */
+    obj = rt_list_entry(node, struct rt_object, list);
+    if ((obj->type & ~RT_Object_Class_Static) != arg->type) {
+      rt_hw_interrupt_enable(level);
+      return (rt_list_t *)RT_NULL;
+    }
+  }
+
+  nr = 0;
+  array = arg->array;
+  while (1) {
+    node = node->next;
+
+    if (node == list) {
+      node = (rt_list_t *)RT_NULL;
+      break;
+    }
+    nr++;
+    *array++ = node;
+    if (nr == arg->nr) {
+      break;
+    }
+  }
+
+  rt_hw_interrupt_enable(level);
+  arg->nr_out = nr;
+  return node;
+}
+///////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+static struct rt_device misc_dev;
+
+static int misc_open(struct dfs_fd *file) { return 0; }
+
+static int misc_close(struct dfs_fd *file) { return 0; }
+
+#define MISC_DEV_CMD_READ_HEAP                _IOWR('M', 0x00, void *)
+#define MISC_DEV_CMD_READ_PAGE                _IOWR('M', 0x01, void *)
+#define MISC_DEV_CMD_GET_MEMORY_SIZE          _IOWR('M', 0x02, void *)
+#define MISC_DEV_CMD_CPU_USAGE                _IOWR('M', 0x03, void *)
+#define MISC_DEV_CMD_CREATE_SOFT_I2C          _IOWR('M', 0x04, void *)
+#define MISC_DEV_CMD_DELETE_SOFT_I2C          _IOWR('M', 0x05, void *)
+#define MISC_DEV_CMD_NTP_SYNC                 _IOWR('M', 0x07, void *)
+#define MISC_DEV_CMD_GET_UTC_TIMESTAMP        _IOWR('M', 0x08, void *)
+#define MISC_DEV_CMD_SET_UTC_TIMESTAMP        _IOWR('M', 0x09, void *)
+#define MISC_DEV_CMD_GET_LOCAL_TIME           _IOWR('M', 0x0a, void *)
+#define MISC_DEV_CMD_SET_TIMEZONE             _IOWR('M', 0x0b, void *)
+#define MISC_DEV_CMD_GET_TIMEZONE             _IOWR('M', 0x0c, void *)
+#define MISC_DEV_CMD_SET_AUTO_EXEC_PY_STAGE   _IOWR('M', 0x0d, void *)
+#define MISC_DEV_CMD_CREATE_ROTARY_ENC_DEV    _IOWR('M', 0x0e, void *)
+#define MISC_DEV_CMD_DELETE_ROTARY_ENC_DEV    _IOWR('M', 0x0f, void *)
+#define MISC_DEV_CMD_REGISTER_TOUCH_DEVICE    _IOWR('M', 0x10, void *)
+#define MISC_DEV_CMD_UNREGISTER_TOUCH_DEVICE  _IOWR('M', 0x11, void *)
+#define MISC_DEV_CMD_GET_MMZ_ZONE_INFO        _IOWR('M', 0x12, void *)
+#define MISC_DEV_CMD_GET_KERNEL_BUILD_INFO    _IOWR('M', 0x13, void *)
+#define MISC_DEV_CMD_MKFS                     _IOWR('M', 0x14, void *)
+
+#define MISC_MKFS_MOUNT_PATH                  "/data"
+#define MISC_MKFS_MOUNT_PATH_LEN              32
+
+struct misc_mkfs_args {
+  char mount_path[MISC_MKFS_MOUNT_PATH_LEN];
+};
+
+struct meminfo_t {
+  size_t total_size;
+  size_t free_size;
+  size_t used_size;
+};
+
+static int misc_get_heap_info(void *args) {
+  struct meminfo_t meminfo;
+  size_t _total = 0, _free = 0, _used = 0;
+
+#ifdef RT_USING_MEMHEAP_AS_HEAP
+#define LIST_FIND_OBJ_NR 8
+
+  rt_ubase_t level;
+  list_get_next_t find_arg;
+  rt_list_t *obj_list[LIST_FIND_OBJ_NR];
+  rt_list_t *next = (rt_list_t *)RT_NULL;
+
+  const char *item_title = "memheap";
+
+  list_find_init(&find_arg, RT_Object_Class_MemHeap, obj_list,
+                 sizeof(obj_list) / sizeof(obj_list[0]));
+
+  do {
+    next = list_get_next(next, &find_arg);
+    {
+      int i;
+      for (i = 0; i < find_arg.nr_out; i++) {
+        struct rt_object *obj;
+        struct rt_memheap *mh;
+
+        obj = rt_list_entry(obj_list[i], struct rt_object, list);
+        level = rt_hw_interrupt_disable();
+        if ((obj->type & ~RT_Object_Class_Static) != find_arg.type) {
+          rt_hw_interrupt_enable(level);
+          continue;
+        }
+
+        rt_hw_interrupt_enable(level);
+
+        mh = (struct rt_memheap *)obj;
+
+        _total += mh->pool_size;
+        _free += mh->available_size;
+        /* Report current allocation, not the historical high-water mark. */
+        if (mh->pool_size >= mh->available_size) {
+          _used += mh->pool_size - mh->available_size;
+        }
+      }
+    }
+  } while (next != (rt_list_t *)RT_NULL);
+#else // RT_USING_MEMHEAP_AS_HEAP
+  rt_uint32_t t = 0, u = 0;
+#ifdef RT_MEM_STATS
+  rt_memory_info(&t, &u, RT_NULL);
+#endif // RT_MEM_STATS
+
+  size_t total_pages = 0, free_pages = 0;
+#ifdef RT_USING_USERSPACE
+  rt_page_get_info(&total_pages, &free_pages);
+#endif // RT_USING_USERSPACE
+
+  _total = t + total_pages * ARCH_PAGE_SIZE;
+  _used = u + (total_pages - free_pages) * ARCH_PAGE_SIZE;
+  _free = _total - _used;
+#endif // RT_USING_MEMHEAP_AS_HEAP
+
+  meminfo.total_size = _total;
+  meminfo.free_size = _free;
+  meminfo.used_size = _used;
+
+  if (sizeof(struct meminfo_t) !=
+      lwp_put_to_user(args, &meminfo, sizeof(struct meminfo_t))) {
+    rt_kprintf("%s put_to_user failed\n", __func__);
+    return -1;
+  }
+
+  return 0;
+}
+
+static int misc_get_page_info(void *args) {
+  struct meminfo_t meminfo;
+  size_t total, free;
+  rt_page_get_info(&total, &free);
+
+  meminfo.total_size = total * PAGE_SIZE;
+  meminfo.free_size = free * PAGE_SIZE;
+  meminfo.used_size = meminfo.total_size - meminfo.free_size;
+
+  if (sizeof(struct meminfo_t) !=
+      lwp_put_to_user(args, &meminfo, sizeof(struct meminfo_t))) {
+    rt_kprintf("%s put_to_user failed\n", __func__);
+    return -1;
+  }
+  return 0;
+}
+
+static int misc_get_cpu_usage(void *args) {
+  int usage = -1;
+
+#ifdef RT_USING_USAGE
+  usage = (int)sys_cpu_usage(0);
+#endif
+
+  if (sizeof(int) != lwp_put_to_user(args, &usage, sizeof(int))) {
+    rt_kprintf("%s put_to_user failed\n", __func__);
+    return -1;
+  }
+
+  return 0;
+}
+
+static int misc_ntp_sync(void *args) {
+  int result = 0;
+
+#ifdef PKG_NETUTILS_NTP
+  if(0x00 < ntp_sync_to_rtc(RT_NULL)) {
+    result = 1;
+  }
+#else
+  return -1;
+#endif
+
+  if (sizeof(int) != lwp_put_to_user(args, &result, sizeof(int))) {
+    rt_kprintf("%s put_to_user failed\n", __func__);
+    return -1;
+  }
+
+  return 0;
+}
+
+static int misc_get_utc_timestamp(void *args) {
+  time_t tm = time(NULL);
+
+  if (sizeof(tm) != lwp_put_to_user(args, &tm, sizeof(tm))) {
+    rt_kprintf("%s put_to_user failed\n", __func__);
+    return -2;
+  }
+
+  return  0;
+}
+
+static int misc_set_utc_timestamp(void *args) {
+  time_t tm;
+
+  if(sizeof(tm) != lwp_get_from_user(&tm, args, sizeof(tm))) {
+    rt_kprintf("%s get_frome_user failed\n", __func__);
+    return -1;
+  }
+
+  extern int stime(const time_t *t);
+  return stime(&tm);
+}
+
+static int misc_get_memory_size(void *args) {
+  uint64_t size = get_ddr_phy_size();
+
+  if (sizeof(uint64_t) != lwp_put_to_user(args, &size, sizeof(uint64_t))) {
+    rt_kprintf("%s put_to_user failed\n", __func__);
+    return -1;
+  }
+
+  return 0;
+}
+
+static int misc_create_soft_i2c_device(void *args) {
+#if defined (RT_USING_SOFT_I2C)
+  struct soft_i2c_configure {
+    uint32_t bus_num;
+    uint32_t pin_scl;
+    uint32_t pin_sda;
+    uint32_t freq;
+    uint32_t timeout_ms;
+  };
+
+  struct soft_i2c_configure cfg = {0};
+
+  if(sizeof(cfg) != lwp_get_from_user(&cfg, args, sizeof(cfg))) {
+    rt_kprintf("%s get_frome_user failed\n", __func__);
+    return -1;
+  }
+
+  uint32_t timeout_tick = rt_tick_from_millisecond(cfg.timeout_ms);
+
+  extern int rt_soft_i2c_add_dev(int bus_num, int scl, int sda, uint32_t freq, uint32_t timeout);
+  return rt_soft_i2c_add_dev(cfg.bus_num, cfg.pin_scl, cfg.pin_sda, cfg.freq, timeout_tick);
+#else
+  rt_kprintf("please enable soft i2c\n");
+
+  return -1;
+#endif // RT_USING_SOFT_I2C
+}
+
+static int misc_delete_soft_i2c_device(void *args) {
+#if defined (RT_USING_SOFT_I2C)
+  uint32_t bus_num = 0;
+
+  if(sizeof(bus_num) != lwp_get_from_user(&bus_num, args, sizeof(bus_num))) {
+    rt_kprintf("%s get_frome_user failed\n", __func__);
+    return -1;
+  }
+
+  extern int rt_soft_i2c_del_dev(int bus_num);
+  return rt_soft_i2c_del_dev(bus_num);
+#else
+  rt_kprintf("please enable soft i2c\n");
+
+  return -1;
+#endif // RT_USING_SOFT_I2C
+}
+
+static int misc_mkfs(void *args) {
+  struct misc_mkfs_args mkfs_args;
+  struct dfs_filesystem *fs;
+  int result;
+
+  if ((args == RT_NULL) ||
+      (sizeof(mkfs_args) != lwp_get_from_user(&mkfs_args, args, sizeof(mkfs_args)))) {
+    return -EFAULT;
+  }
+
+  if ((mkfs_args.mount_path[0] == '\0') ||
+      (memchr(mkfs_args.mount_path, '\0', sizeof(mkfs_args.mount_path)) == RT_NULL)) {
+    return -EINVAL;
+  }
+
+  if (rt_strcmp(mkfs_args.mount_path, MISC_MKFS_MOUNT_PATH) != 0) {
+    return -EINVAL;
+  }
+
+  fs = dfs_filesystem_lookup(mkfs_args.mount_path);
+  if ((fs == RT_NULL) || (fs->path == RT_NULL) ||
+      (rt_strcmp(fs->path, MISC_MKFS_MOUNT_PATH) != 0) ||
+      (fs->ops == RT_NULL) || (fs->ops->name == RT_NULL) ||
+      (fs->dev_id == RT_NULL)) {
+    return -ENODEV;
+  }
+
+  /* dfs_mkfs returns -1 for some failures and reports the detail via errno. */
+  rt_set_errno(-EINVAL);
+  result = dfs_mkfs(fs->ops->name, fs->dev_id->parent.name);
+  if (result == -1) {
+    result = rt_get_errno();
+    if (result > 0) {
+      result = -result;
+    } else if (result == 0) {
+      result = -EIO;
+    }
+  }
+
+  return result;
+}
+
+static int misc_get_local_time(void *args) {
+  time_t tv;
+  struct tm *_tm = NULL;
+
+  tv = time(NULL);
+  _tm = localtime(&tv);
+
+  if(sizeof(*_tm) != lwp_put_to_user(args, _tm, sizeof(*_tm))) {
+    rt_kprintf("%s put_to_user failed\n", __func__);
+    return -1;
+  }
+
+  return 0;
+}
+
+static int misc_set_timezone(void *args) {
+  time_t offset;
+
+  if(sizeof(offset) != lwp_get_from_user(&offset, args, sizeof(offset))) {
+    rt_kprintf("%s get_frome_user failed\n", __func__);
+    return -1;
+  }
+
+  extern void rt_tz_set(int32_t offset_sec);
+  rt_tz_set(offset);
+
+  return 0;
+}
+
+static int misc_get_timezone(void *args) {
+  extern int32_t rt_tz_get(void);
+  time_t offset = rt_tz_get();
+
+  if(sizeof(offset) != lwp_put_to_user(args, &offset, sizeof(offset))) {
+    rt_kprintf("%s put_to_user failed\n", __func__);
+    return -1;
+  }
+
+  return 0;
+}
+
+static int mpy_auto_exec_py_stage = 0;
+static uint64_t mpy_auto_exec_py_start_time_ms = 0;
+
+#if defined (RT_RECOVERY_MPY_AUTO_EXEC_PY)
+///////////////////////////////////////////////////////////////////////////////
+// Solve the problem that micropython                                        //
+// automatically executes boot.py/main.py and causes system crash            //
+///////////////////////////////////////////////////////////////////////////////
+#define MAP_SIZE    PAGE_SIZE
+#define MAP_MASK    (MAP_SIZE - 1)
+
+#define MARK_ADDRESS  (0x80300000 + 1020 * 1024)
+
+enum {
+  STAGE_NORMAL = 1, 
+  STAGE_BOOTPY_START, 
+  STAGE_BOOTPY_END, 
+  STAGE_MAINPY_START, 
+  STAGE_MAINPY_END,
+  STAGE_FALLBACK_PY_START,
+  STAGE_FALLBACK_PY_END,
+  STAGE_MAX,
+};
+
+struct delete_file_mark {
+  uint32_t magic;
+  uint32_t path_stage;
+  uint32_t path_length;
+  uint32_t path_crc32;
+  char path[64];
+};
+
+extern uint32_t gpt_crc32(const void *data, size_t len);
+
+void canmv_on_micropython_error(void) {
+  uint64_t time;
+
+  char file_path[32];
+  struct delete_file_mark mark;
+
+  const rt_ubase_t target = MARK_ADDRESS;
+  void *map_base = rt_ioremap_nocache((void *)(target & ~MAP_MASK), MAP_SIZE);
+  volatile void *memory_address = map_base + (target & MAP_MASK);
+
+  if ((STAGE_BOOTPY_START == mpy_auto_exec_py_stage) || (STAGE_MAINPY_START == mpy_auto_exec_py_stage)) {
+    rt_snprintf(file_path, sizeof(file_path), "/sdcard/%s", 
+                (STAGE_BOOTPY_START == mpy_auto_exec_py_stage) ? "boot.py" : "main.py");
+
+    time = cpu_ticks();
+
+    if((1000 * 120) <= ((time / 27 / 1000) - mpy_auto_exec_py_start_time_ms)) {
+      printf("main.py crashes after 2 min, not rename it.\n");
+
+      rt_iounmap(map_base);
+      rt_hw_cpu_reset();
+
+      return;
+    }
+
+    mark.magic = 0xDEADBEEF;
+    mark.path_stage = mpy_auto_exec_py_stage;
+    mark.path_length = strlen(file_path);
+    mark.path_crc32 = gpt_crc32(file_path, mark.path_length);
+    strncpy(mark.path, file_path, sizeof(mark.path));
+
+    memcpy((void *)memory_address, &mark, sizeof(mark));
+
+    rt_iounmap(map_base);
+    rt_hw_cpu_reset();
+  }
+}
+
+int check_delete_file_mark(void) {
+  char new_path[64];
+  struct delete_file_mark mark;
+  
+  const rt_ubase_t target = MARK_ADDRESS;
+  void *map_base = rt_ioremap_nocache((void *)(target & ~MAP_MASK), MAP_SIZE);
+  volatile void *memory_address = map_base + (target & MAP_MASK);
+
+  memcpy(&mark, (void *)memory_address, sizeof(mark));
+  memset((void *)memory_address, 0, sizeof(mark));
+  rt_iounmap(map_base);
+
+  if (mark.magic != 0xDEADBEEF) {
+    // rt_kprintf("Invalid magic number: 0x%08X\n", mark.magic);
+    return -1;
+  }
+
+  if (mark.path_length >= sizeof(mark.path)) {
+    rt_kprintf("Invalid path length: %u\n", mark.path_length);
+    return -2;
+  }
+
+  uint32_t calculated_crc32 = gpt_crc32(mark.path, mark.path_length);
+  if (mark.path_crc32 != calculated_crc32) {
+    rt_kprintf("CRC32 mismatch: expected 0x%08X, got 0x%08X\n", calculated_crc32, mark.path_crc32);
+    return -3;
+  }
+
+  if(STAGE_BOOTPY_START == mark.path_stage) {
+    rt_strncpy(new_path, "/sdcard/bad_boot.py", sizeof("/sdcard/bad_boot.py") - 1);
+  } else if(STAGE_MAINPY_START == mark.path_stage) {
+    rt_strncpy(new_path, "/sdcard/bad_main.py", sizeof("/sdcard/bad_main.py") - 1);
+  } else {
+    rt_kprintf("Invalid mark stage %d\n", mark.path_stage);
+    return -4;
+  }
+
+  rt_kprintf("Valid delete file mark found\n");
+  // rt_kprintf("  Path: %s\n", mark.path);
+  // rt_kprintf("  Path Length: %u\n", mark.path_length);
+  // rt_kprintf("  CRC32: 0x%08X\n", mark.path_crc32);
+
+  dfs_file_rename(mark.path, new_path);
+
+  return 0;
+}
+#endif
+
+static int misc_set_auto_exec_stage(void* args)
+{
+    int stage;
+    uint64_t time;
+
+    if (sizeof(stage) != lwp_get_from_user(&stage, args, sizeof(stage))) {
+        rt_kprintf("%s get_frome_user failed\n", __func__);
+        return -1;
+    }
+
+    mpy_auto_exec_py_stage = stage;
+
+    time = cpu_ticks();
+    mpy_auto_exec_py_start_time_ms = (time / (27 * 1000));
+
+    return 0;
+}
+
+#if defined(CONFIG_ENABLE_ROTARY_ENCODER)
+static int misc_create_rotary_encoder_dev(void* args)
+{
+    struct encoder_dev_cfg_t cfg;
+
+    if (0x00 != lwp_get_from_user_ex(&cfg, args, sizeof(struct encoder_dev_cfg_t))) {
+        return -1;
+    }
+
+    return encoder_dev_create(&cfg);
+}
+
+static int misc_delete_rotary_encoder_dev(void* args)
+{
+    int index;
+
+    if (0x00 != lwp_get_from_user_ex(&index, args, sizeof(int))) {
+        return -1;
+    }
+
+    return encoder_dev_delete(index);
+}
+#endif
+
+#if defined(RT_USING_TOUCH)
+static int misc_register_touch_device(void* args)
+{
+    struct drv_touch_config cfg;
+
+    if (sizeof(cfg) != lwp_get_from_user(&cfg, args, sizeof(cfg))) {
+        rt_kprintf("%s get_from_user failed\n", __func__);
+        return -1;
+    }
+
+    return drv_touch_mgmt_create_device(&cfg);
+}
+
+static int misc_unregister_touch_device(void* args)
+{
+    int index = -1;
+
+    if (sizeof(index) != lwp_get_from_user(&index, args, sizeof(index))) {
+        rt_kprintf("%s get_from_user failed\n", __func__);
+        return -1;
+    }
+
+    return drv_touch_mgmt_delete_device(index);
+}
+#endif
+
+static int misc_get_mmz_zone_info(void* args)
+{
+  struct mmz_zone_info_t {
+    size_t mmz_start;
+    size_t mmz_end;
+  } info;
+
+  info.mmz_start = MEM_MMZ_BASE;
+  info.mmz_end = MEM_MMZ_BASE + MEM_MMZ_SIZE;
+
+  if(0x00 != lwp_put_to_user_ex(args, &info, sizeof(info))) {
+        rt_kprintf("%s put_to_user failed\n", __func__);
+        return -1;
+  }
+  return 0;
+}
+
+static int misc_get_kernel_build_info(void* args)
+{
+#define INFO_MAX_LEN (256)
+
+    struct kernel_build_info_t {
+        int  len;
+        char info[0];
+    };
+
+    struct kernel_build_info_t* info = rt_malloc(sizeof(struct kernel_build_info_t) + INFO_MAX_LEN);
+    if (!info) {
+        return -1;
+    }
+
+    info->len = sizeof(SDK_VERSION_);
+    if (INFO_MAX_LEN < info->len) {
+        info->len = INFO_MAX_LEN;
+    }
+
+    rt_memcpy(info->info, SDK_VERSION_, info->len);
+
+    if (0x00 != lwp_put_to_user_ex(args, info, info->len + sizeof(struct kernel_build_info_t))) {
+        rt_free(info);
+
+        rt_kprintf("%s put_to_user failed\n", __func__);
+
+        return -1;
+    }
+
+    rt_free(info);
+    return 0;
+
+#undef INFO_MAX_LEN
+}
+
+static const struct misc_dev_handle misc_handles[] = {
+  {
+    .cmd = MISC_DEV_CMD_READ_HEAP,
+    .func = misc_get_heap_info,
+  },
+  {
+    .cmd = MISC_DEV_CMD_READ_PAGE,
+    .func = misc_get_page_info,
+  },
+  {
+    .cmd = MISC_DEV_CMD_CPU_USAGE,
+    .func = misc_get_cpu_usage,
+  },
+  {
+    .cmd = MISC_DEV_CMD_NTP_SYNC,
+    .func = misc_ntp_sync,
+  },
+  {
+    .cmd = MISC_DEV_CMD_GET_UTC_TIMESTAMP,
+    .func = misc_get_utc_timestamp,
+  },
+  {
+    .cmd = MISC_DEV_CMD_SET_UTC_TIMESTAMP,
+    .func = misc_set_utc_timestamp,
+  },
+  {
+    .cmd = MISC_DEV_CMD_GET_MEMORY_SIZE,
+    .func = misc_get_memory_size,
+  },
+  {
+    .cmd = MISC_DEV_CMD_CREATE_SOFT_I2C,
+    .func = misc_create_soft_i2c_device,
+  },
+  {
+    .cmd = MISC_DEV_CMD_DELETE_SOFT_I2C,
+    .func = misc_delete_soft_i2c_device,
+  },
+  {
+    .cmd = MISC_DEV_CMD_GET_LOCAL_TIME,
+    .func = misc_get_local_time,
+  },
+  {
+    .cmd = MISC_DEV_CMD_SET_TIMEZONE,
+    .func = misc_set_timezone,
+  },
+  {
+    .cmd = MISC_DEV_CMD_GET_TIMEZONE,
+    .func = misc_get_timezone,
+  },
+  {
+    .cmd = MISC_DEV_CMD_SET_AUTO_EXEC_PY_STAGE,
+    .func = misc_set_auto_exec_stage,
+  },
+
+#if defined (CONFIG_ENABLE_ROTARY_ENCODER)
+  {
+    .cmd = MISC_DEV_CMD_CREATE_ROTARY_ENC_DEV,
+    .func = misc_create_rotary_encoder_dev,
+  },
+  {
+    .cmd = MISC_DEV_CMD_DELETE_ROTARY_ENC_DEV,
+    .func = misc_delete_rotary_encoder_dev,
+  },
+#endif
+#if defined (RT_USING_TOUCH)
+  {
+    .cmd = MISC_DEV_CMD_REGISTER_TOUCH_DEVICE,
+    .func = misc_register_touch_device,
+  },
+  {
+    .cmd = MISC_DEV_CMD_UNREGISTER_TOUCH_DEVICE,
+    .func = misc_unregister_touch_device,
+  },
+#endif
+  {
+    .cmd = MISC_DEV_CMD_GET_MMZ_ZONE_INFO,
+    .func = misc_get_mmz_zone_info,
+  },
+  {
+    .cmd = MISC_DEV_CMD_GET_KERNEL_BUILD_INFO,
+    .func = misc_get_kernel_build_info,
+  },
+  {
+    .cmd = MISC_DEV_CMD_MKFS,
+    .func = misc_mkfs,
+  },
+
+};
+
+static int misc_ioctl(struct dfs_fd *file, int cmd, void *args) {
+  int result = 0;
+
+  for(size_t i = 0; i < sizeof(misc_handles) / sizeof(misc_handles[0]); i++) {
+    if((cmd == misc_handles[i].cmd) && (misc_handles[i].func)) {
+      return misc_handles[i].func(args);
+    }
+  }
+
+  rt_kprintf("%s unknown cmd 0x%x\n", __func__, cmd);
+
+  return -1;
+}
+
+static const struct dfs_file_ops meminfo_fops = {
+    .open = misc_open,   // int (*open)     (struct dfs_fd *fd);
+    .close = misc_open,  // int (*close)    (struct dfs_fd *fd);
+    .ioctl = misc_ioctl, // int (*ioctl)    (struct dfs_fd *fd, int cmd, void
+                         // *args);
+    // int (*read)     (struct dfs_fd *fd, void *buf, size_t count);
+    // int (*write)    (struct dfs_fd *fd, const void *buf, size_t count);
+    // int (*flush)    (struct dfs_fd *fd);
+    // int (*lseek)    (struct dfs_fd *fd, off_t offset);
+    // int (*getdents) (struct dfs_fd *fd, struct dirent *dirp, uint32_t count);
+    // int (*poll)     (struct dfs_fd *fd, struct rt_pollreq *req);
+};
+
+int misc_device_init(void) {
+  RT_ASSERT(!rt_device_find("canmv_misc"));
+  misc_dev.type = RT_Device_Class_Miscellaneous;
+
+  /* no private */
+  misc_dev.user_data = RT_NULL;
+
+  rt_device_register(&misc_dev, "canmv_misc", RT_DEVICE_FLAG_RDONLY);
+
+  misc_dev.fops = &meminfo_fops;
+
+  return 0;
+}
+INIT_APP_EXPORT(misc_device_init);

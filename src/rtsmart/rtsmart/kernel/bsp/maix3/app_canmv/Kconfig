@@ -1,0 +1,32 @@
+menu "Applications CanMV Configuration"
+
+    config RT_RECOVERY_MPY_AUTO_EXEC_PY
+        bool "Enable recovery micropython auto execute boot.py or main.py make system crash"
+        default n
+
+    menuconfig MOUNT_SECOND_CARD
+        bool "Mount second mmc card"
+        depends on RT_USING_SDIO0 && RT_USING_SDIO1
+        depends on !BSP_USING_WIFI_SDIO
+        default n
+        help
+            Mount both SD/MMC controllers as storage. This is mutually
+            exclusive with assigning one of the controllers to SDIO Wi-Fi.
+
+        if MOUNT_SECOND_CARD
+            config SECOND_CARD_CD_GPIO
+                int "Second card-detect GPIO (-1 disables hotplug detection)"
+                range -1 63
+                default -1
+                help
+                    Use this GPIO to detect insertion and removal of the second
+                    SD/MMC card. The pin is configured as an input and monitored on
+                    both edges. Set it to -1 if the slot has no card-detect signal.
+
+            config SECOND_CARD_CD_ACTIVE_LOW
+                bool "Second card-detect signal is active low"
+                depends on SECOND_CARD_CD_GPIO >= 0
+                default y
+        endif
+
+endmenu

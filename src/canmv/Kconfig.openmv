@@ -1,0 +1,21 @@
+menu "CanMV OpenMV Components Configurations"
+
+    config CANMV_IDE_SUPPORT
+        bool "Enable CanMV IDE Support"
+        default y
+        help
+          Enable the CanMV IDE debug protocol over the selected REPL UART.
+          When disabled, only the REPL is available on the
+          selected UART. Hardware UARTs support the command/file/terminal
+          protocol but not high-throughput frame dump.
+
+    comment "FB Configuration"
+
+    config CANMV_OPENMV_CFG_FB_ALLOC_SIZE
+        hex "OpenMV FB Alloc Max Size"
+        default 0x600000
+    config CANMV_OPENMV_CFG_FB_ALLOC_COUNT
+        int "OpenMV FB Alloc Buffer Count"
+        default 256
+
+endmenu

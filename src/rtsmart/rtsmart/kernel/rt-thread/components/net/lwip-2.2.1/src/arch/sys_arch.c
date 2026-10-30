@@ -1,0 +1,962 @@
+/*
+ * COPYRIGHT (C) 2006-2018, RT-Thread Development Team
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+ * SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
+ * OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY
+ * OF SUCH DAMAGE.
+ *
+ * Change Logs:
+ * Date           Author       Notes
+ * 2012-12-8      Bernard      add file header
+ *                             export bsd socket symbol for RT-Thread Application Module
+ * 2017-11-15     Bernard      add lock for init_done callback.
+ * 2018-11-02     MurphyZhao   port to lwip2.1.0
+ */
+
+#include <rtthread.h>
+
+#include "lwip/sys.h"
+#include "lwip/opt.h"
+#include "lwip/stats.h"
+#include "lwip/err.h"
+#include "arch/sys_arch.h"
+#include "lwip/debug.h"
+#include "lwip/netif.h"
+#include "lwip/netifapi.h"
+#include "lwip/tcpip.h"
+#include "netif/ethernetif.h"
+#include "lwip/sio.h"
+#include "lwip/init.h"
+#include "lwip/dhcp.h"
+#include "lwip/inet.h"
+
+#include "netif/etharp.h"
+
+#include <string.h>
+#include <stdio.h>
+
+struct sys_mbox
+{
+    rt_mailbox_t mailbox;
+    rt_uint32_t references;
+    rt_uint32_t waiters;
+    rt_bool_t closing;
+};
+
+#ifdef RT_USING_SMP
+static struct rt_spinlock g_sys_mbox_lock;
+#endif
+static char g_sys_mbox_closed;
+
+static rt_base_t sys_mbox_global_lock(void)
+{
+#ifdef RT_USING_SMP
+    return rt_spin_lock_irqsave(&g_sys_mbox_lock);
+#else
+    return rt_hw_interrupt_disable();
+#endif
+}
+
+static void sys_mbox_global_unlock(rt_base_t level)
+{
+#ifdef RT_USING_SMP
+    rt_spin_unlock_irqrestore(&g_sys_mbox_lock, level);
+#else
+    rt_hw_interrupt_enable(level);
+#endif
+}
+
+static struct sys_mbox *sys_mbox_acquire(sys_mbox_t *slot,
+                                          rt_bool_t waiter)
+{
+    struct sys_mbox *mbox;
+    rt_base_t level = sys_mbox_global_lock();
+
+    mbox = slot ? *slot : RT_NULL;
+    if (mbox && !mbox->closing)
+    {
+        mbox->references++;
+        if (waiter)
+        {
+            mbox->waiters++;
+        }
+    }
+    else
+    {
+        mbox = RT_NULL;
+    }
+    sys_mbox_global_unlock(level);
+    return mbox;
+}
+
+static void sys_mbox_release(struct sys_mbox *mbox, rt_bool_t waiter)
+{
+    rt_base_t level = sys_mbox_global_lock();
+
+    if (waiter)
+    {
+        mbox->waiters--;
+    }
+    mbox->references--;
+    sys_mbox_global_unlock(level);
+}
+
+static rt_bool_t sys_mbox_is_closing(struct sys_mbox *mbox)
+{
+    rt_bool_t closing;
+    rt_base_t level = sys_mbox_global_lock();
+
+    closing = mbox->closing;
+    sys_mbox_global_unlock(level);
+    return closing;
+}
+
+/*
+ * Initialize the network interface device
+ *
+ * @return the operation status, ERR_OK on OK, ERR_IF on error
+ */
+static err_t netif_device_init(struct netif *netif)
+{
+    struct eth_device *ethif;
+
+    ethif = (struct eth_device *)netif->state;
+    if (ethif != RT_NULL)
+    {
+        rt_device_t device;
+
+        /* get device object */
+        device = (rt_device_t) ethif;
+        if (rt_device_init(device) != RT_EOK)
+        {
+            return ERR_IF;
+        }
+
+        /* copy device flags to netif flags */
+        netif->flags = ethif->flags;
+        netif->mtu = ETHERNET_MTU;
+
+        /* set output */
+        netif->output = etharp_output;
+
+#ifdef RT_USING_NETDEV
+        if (eth_device_netdev_add(netif) != RT_EOK)
+        {
+            return ERR_IF;
+        }
+#endif
+
+        return ERR_OK;
+    }
+
+    return ERR_IF;
+}
+/*
+ * Initialize the ethernetif layer and set network interface device up
+ */
+static void tcpip_init_done_callback(void *arg)
+{
+    rt_device_t device;
+    struct eth_device *ethif;
+    ip4_addr_t ipaddr, netmask, gw;
+    struct rt_list_node* node;
+    struct rt_object* object;
+    struct rt_object_information *information;
+
+    LWIP_ASSERT("invalid arg.\n",arg);
+
+    IP4_ADDR(&gw, 0,0,0,0);
+    IP4_ADDR(&ipaddr, 0,0,0,0);
+    IP4_ADDR(&netmask, 0,0,0,0);
+
+    /* enter critical */
+    rt_enter_critical();
+
+    /* for each network interfaces */
+    information = rt_object_get_information(RT_Object_Class_Device);
+    RT_ASSERT(information != RT_NULL);
+    for (node = information->object_list.next;
+         node != &(information->object_list);
+         node = node->next)
+    {
+        object = rt_list_entry(node, struct rt_object, list);
+        device = (rt_device_t)object;
+        if (device->type == RT_Device_Class_NetIf)
+        {
+            ethif = (struct eth_device *)device;
+
+            /* leave critical */
+            rt_exit_critical();
+            LOCK_TCPIP_CORE();
+
+            netif_add(ethif->netif, &ipaddr, &netmask, &gw,
+                      ethif, netif_device_init, tcpip_input);
+
+#if LWIP_DHCP
+            /* set interface up */
+            netif_set_up(ethif->netif);
+            /* if this interface uses DHCP, start the DHCP client */
+            dhcp_start(ethif->netif);
+#else
+            /* set interface up */
+            netif_set_up(ethif->netif);
+#endif
+
+            if (ethif->flags & ETHIF_LINK_PHYUP)
+            {
+                netif_set_link_up(ethif->netif);
+            }
+
+            UNLOCK_TCPIP_CORE();
+            /* enter critical */
+            rt_enter_critical();
+        }
+    }
+
+    /* leave critical */
+    rt_exit_critical();
+    rt_sem_release((rt_sem_t)arg);
+}
+
+/**
+ * LwIP system initialization
+ */
+extern int eth_system_device_init_private(void);
+int lwip_system_init(void)
+{
+    rt_err_t rc;
+    struct rt_semaphore done_sem;
+    static rt_bool_t init_ok = RT_FALSE;
+
+    if (init_ok)
+    {
+        rt_kprintf("lwip system already init.\n");
+        return 0;
+    }
+
+    eth_system_device_init_private();
+
+    /* set default netif to NULL */
+    netif_default = RT_NULL;
+
+    rc = rt_sem_init(&done_sem, "done", 0, RT_IPC_FLAG_FIFO);
+
+    if (rc != RT_EOK)
+    {
+        LWIP_ASSERT("Failed to create semaphore", 0);
+
+        return -1;
+    }
+
+    tcpip_init(tcpip_init_done_callback, (void *)&done_sem);
+
+    /* waiting for initialization done */
+    if (rt_sem_take(&done_sem, RT_WAITING_FOREVER) != RT_EOK)
+    {
+        rt_sem_detach(&done_sem);
+
+        return -1;
+    }
+    rt_sem_detach(&done_sem);
+
+    /* set default ip address */
+#if !LWIP_DHCP
+    if (netif_default != RT_NULL)
+    {
+        struct ip4_addr ipaddr, netmask, gw;
+
+        ipaddr.addr = inet_addr(RT_LWIP_IPADDR);
+        gw.addr = inet_addr(RT_LWIP_GWADDR);
+        netmask.addr = inet_addr(RT_LWIP_MSKADDR);
+
+        netifapi_netif_set_addr(netif_default, &ipaddr, &netmask, &gw);
+    }
+#endif
+    rt_kprintf("lwIP-%d.%d.%d initialized!\n", LWIP_VERSION_MAJOR, LWIP_VERSION_MINOR, LWIP_VERSION_REVISION);
+
+    init_ok = RT_TRUE;
+
+    return 0;
+}
+INIT_PREV_EXPORT(lwip_system_init);
+
+void sys_init(void)
+{
+#ifdef RT_USING_SMP
+    rt_spin_lock_init(&g_sys_mbox_lock);
+#endif
+}
+
+void lwip_sys_init(void)
+{
+    lwip_system_init();
+}
+
+/*
+ * Create a new semaphore
+ *
+ * @return the operation status, ERR_OK on OK; others on error
+ */
+err_t sys_sem_new(sys_sem_t *sem, u8_t count)
+{
+    static unsigned short counter = 0;
+    char tname[RT_NAME_MAX];
+    sys_sem_t tmpsem;
+
+    RT_DEBUG_NOT_IN_INTERRUPT;
+
+    rt_snprintf(tname, RT_NAME_MAX, "%s%d", SYS_LWIP_SEM_NAME, counter);
+    counter ++;
+
+    tmpsem = rt_sem_create(tname, count, RT_IPC_FLAG_FIFO);
+    if (tmpsem == RT_NULL)
+        return ERR_MEM;
+    else
+    {
+        *sem = tmpsem;
+
+        return ERR_OK;
+    }
+}
+
+/*
+ * Deallocate a semaphore
+ */
+void sys_sem_free(sys_sem_t *sem)
+{
+    RT_DEBUG_NOT_IN_INTERRUPT;
+    rt_sem_delete(*sem);
+}
+
+/*
+ * Signal a semaphore
+ */
+void sys_sem_signal(sys_sem_t *sem)
+{
+    rt_sem_release(*sem);
+}
+
+/*
+ * Block the thread while waiting for the semaphore to be signaled
+ *
+ * @return If the timeout argument is non-zero, it will return the number of milliseconds
+ *         spent waiting for the semaphore to be signaled; If the semaphore isn't signaled
+ *         within the specified time, it will return SYS_ARCH_TIMEOUT; If the thread doesn't
+ *         wait for the semaphore, it will return zero
+ */
+u32_t sys_arch_sem_wait(sys_sem_t *sem, u32_t timeout)
+{
+    rt_err_t ret;
+    s32_t t;
+    u32_t tick;
+
+    RT_DEBUG_NOT_IN_INTERRUPT;
+
+    /* get the begin tick */
+    tick = rt_tick_get();
+    if (timeout == 0)
+        t = RT_WAITING_FOREVER;
+    else
+    {
+        /* convert msecond to os tick */
+        if (timeout < (1000/RT_TICK_PER_SECOND))
+            t = 1;
+        else
+            t = timeout / (1000/RT_TICK_PER_SECOND);
+    }
+
+    ret = rt_sem_take(*sem, t);
+
+    if (ret == -RT_ETIMEOUT)
+        return SYS_ARCH_TIMEOUT;
+    else
+    {
+        if (ret == RT_EOK)
+            ret = 1;
+    }
+
+    /* get elapse msecond */
+    tick = rt_tick_get() - tick;
+
+    /* convert tick to msecond */
+    tick = tick * (1000 / RT_TICK_PER_SECOND);
+    if (tick == 0)
+        tick = 1;
+
+    return tick;
+}
+
+#ifndef sys_sem_valid
+/** Check if a semaphore is valid/allocated:
+ *  return 1 for valid, 0 for invalid
+ */
+int sys_sem_valid(sys_sem_t *sem)
+{
+    return *sem != RT_NULL;
+}
+#endif
+
+#ifndef sys_sem_set_invalid
+/** Set a semaphore invalid so that sys_sem_valid returns 0
+ */
+void sys_sem_set_invalid(sys_sem_t *sem)
+{
+    *sem = RT_NULL;
+}
+#endif
+
+/* ====================== Mutex ====================== */
+
+/** Create a new mutex
+ * @param mutex pointer to the mutex to create
+ * @return a new mutex
+ */
+err_t sys_mutex_new(sys_mutex_t *mutex)
+{
+    static unsigned short counter = 0;
+    char tname[RT_NAME_MAX];
+    sys_mutex_t tmpmutex;
+
+    RT_DEBUG_NOT_IN_INTERRUPT;
+
+    rt_snprintf(tname, RT_NAME_MAX, "%s%d", SYS_LWIP_MUTEX_NAME, counter);
+    counter ++;
+
+    tmpmutex = rt_mutex_create(tname, RT_IPC_FLAG_FIFO);
+    if (tmpmutex == RT_NULL)
+        return ERR_MEM;
+    else
+    {
+        *mutex = tmpmutex;
+
+        return ERR_OK;
+    }
+}
+
+/** Lock a mutex
+ * @param mutex the mutex to lock
+ */
+void sys_mutex_lock(sys_mutex_t *mutex)
+{
+    RT_DEBUG_NOT_IN_INTERRUPT;
+    rt_mutex_take(*mutex, RT_WAITING_FOREVER);
+
+    return;
+}
+
+/** Unlock a mutex
+ * @param mutex the mutex to unlock
+ */
+void sys_mutex_unlock(sys_mutex_t *mutex)
+{
+    rt_mutex_release(*mutex);
+}
+
+/** Delete a semaphore
+ * @param mutex the mutex to delete
+ */
+void sys_mutex_free(sys_mutex_t *mutex)
+{
+    RT_DEBUG_NOT_IN_INTERRUPT;
+
+    rt_mutex_delete(*mutex);
+}
+
+#ifndef sys_mutex_valid
+/** Check if a mutex is valid/allocated:
+ *  return 1 for valid, 0 for invalid
+ */
+int sys_mutex_valid(sys_mutex_t *mutex)
+{
+    return *mutex != RT_NULL;
+}
+#endif
+
+#ifndef sys_mutex_set_invalid
+/** Set a mutex invalid so that sys_mutex_valid returns 0
+ */
+void sys_mutex_set_invalid(sys_mutex_t *mutex)
+{
+    *mutex = RT_NULL;
+}
+#endif
+
+/* ====================== Mailbox ====================== */
+
+/*
+ * Create an empty mailbox for maximum "size" elements
+ *
+ * @return the operation status, ERR_OK on OK; others on error
+ */
+err_t sys_mbox_new(sys_mbox_t *mbox, int size)
+{
+    static unsigned short counter = 0;
+    struct sys_mbox *new_mbox;
+    char tname[RT_NAME_MAX];
+
+    RT_DEBUG_NOT_IN_INTERRUPT;
+
+    if (!mbox || size <= 0)
+    {
+        return ERR_ARG;
+    }
+    new_mbox = rt_calloc(1, sizeof(*new_mbox));
+    if (!new_mbox)
+    {
+        return ERR_MEM;
+    }
+    rt_snprintf(tname, RT_NAME_MAX, "%s%d", SYS_LWIP_MBOX_NAME, counter);
+    counter++;
+    new_mbox->mailbox = rt_mb_create(tname, size, RT_IPC_FLAG_FIFO);
+    if (!new_mbox->mailbox)
+    {
+        rt_free(new_mbox);
+        return ERR_MEM;
+    }
+    *mbox = new_mbox;
+    return ERR_OK;
+}
+
+/*
+ * Deallocate a mailbox. Blocked users hold references and are woken before
+ * the RT-Thread mailbox and wrapper storage are released.
+ */
+void sys_mbox_free(sys_mbox_t *mbox)
+{
+    struct sys_mbox *old_mbox;
+    rt_uint32_t references;
+    rt_uint32_t waiters;
+    rt_tick_t last_warning;
+    rt_tick_t now;
+    rt_base_t level;
+
+    RT_DEBUG_NOT_IN_INTERRUPT;
+
+    level = sys_mbox_global_lock();
+    old_mbox = mbox ? *mbox : RT_NULL;
+    if (old_mbox)
+    {
+        *mbox = RT_NULL;
+        old_mbox->closing = RT_TRUE;
+    }
+    sys_mbox_global_unlock(level);
+    if (!old_mbox)
+    {
+        return;
+    }
+
+    last_warning = rt_tick_get();
+    do
+    {
+        level = sys_mbox_global_lock();
+        references = old_mbox->references;
+        waiters = old_mbox->waiters;
+        sys_mbox_global_unlock(level);
+        if (waiters)
+        {
+            /* A successful send wakes one receiver; retry while it is full. */
+            (void)rt_mb_send(old_mbox->mailbox,
+                             (rt_ubase_t)&g_sys_mbox_closed);
+        }
+        if (references)
+        {
+            now = rt_tick_get();
+            if (now - last_warning >= RT_TICK_PER_SECOND)
+            {
+                rt_kprintf("lwIP: sys_mbox_free waiting for %u reference(s), "
+                           "%u waiter(s)\n", references, waiters);
+                last_warning = now;
+            }
+            rt_thread_mdelay(1);
+        }
+    } while (references);
+
+    rt_mb_delete(old_mbox->mailbox);
+    rt_free(old_mbox);
+}
+
+/** Post a message to a valid mbox - may not fail
+ * -> blocks if full, only used from tasks not from ISR
+ * Concurrent teardown cancels the post so sys_mbox_free() can complete;
+ * callers must stop producers before freeing a mailbox.
+ * @param mbox mbox to posts the message
+ * @param msg message to post (ATTENTION: can be NULL)
+ */
+void sys_mbox_post(sys_mbox_t *mbox, void *msg)
+{
+    struct sys_mbox *active_mbox;
+
+    RT_DEBUG_NOT_IN_INTERRUPT;
+
+    active_mbox = sys_mbox_acquire(mbox, RT_FALSE);
+    if (!active_mbox)
+    {
+        return;
+    }
+    /*
+     * Wait on the mailbox sender queue, but periodically check whether
+     * teardown has started so sys_mbox_free() cannot deadlock.
+     */
+    while (rt_mb_send_wait(active_mbox->mailbox, (rt_ubase_t)msg, 1) != RT_EOK)
+    {
+        if (sys_mbox_is_closing(active_mbox))
+        {
+            break;
+        }
+    }
+    sys_mbox_release(active_mbox, RT_FALSE);
+}
+
+/*
+ * Try to post the "msg" to the mailbox
+ *
+ * @return return ERR_OK if the "msg" is posted, ERR_MEM if the mailbox is full
+ */
+err_t sys_mbox_trypost(sys_mbox_t *mbox, void *msg)
+{
+    struct sys_mbox *active_mbox = sys_mbox_acquire(mbox, RT_FALSE);
+    rt_err_t result;
+
+    if (!active_mbox)
+    {
+        return ERR_MEM;
+    }
+    result = rt_mb_send(active_mbox->mailbox, (rt_ubase_t)msg);
+    sys_mbox_release(active_mbox, RT_FALSE);
+    return result == RT_EOK ? ERR_OK : ERR_MEM;
+}
+
+err_t
+sys_mbox_trypost_fromisr(sys_mbox_t *q, void *msg)
+{
+  return sys_mbox_trypost(q, msg);
+}
+
+/** Wait for a new message to arrive in the mbox
+ * @param mbox mbox to get a message from
+ * @param msg pointer where the message is stored
+ * @param timeout maximum time (in milliseconds) to wait for a message
+ * @return time (in milliseconds) waited for a message, may be 0 if not waited
+           or SYS_ARCH_TIMEOUT on timeout
+ *         The returned time has to be accurate to prevent timer jitter!
+ */
+u32_t sys_arch_mbox_fetch(sys_mbox_t *mbox, void **msg, u32_t timeout)
+{
+    struct sys_mbox *active_mbox;
+    rt_ubase_t received = 0;
+    rt_err_t result;
+    s32_t t;
+    u32_t tick;
+
+    RT_DEBUG_NOT_IN_INTERRUPT;
+
+    active_mbox = sys_mbox_acquire(mbox, RT_TRUE);
+    if (!active_mbox)
+    {
+        return SYS_ARCH_TIMEOUT;
+    }
+    tick = rt_tick_get();
+
+    if (timeout == 0)
+    {
+        t = RT_WAITING_FOREVER;
+    }
+    else if (timeout < (1000 / RT_TICK_PER_SECOND))
+    {
+        t = 1;
+    }
+    else
+    {
+        t = timeout / (1000 / RT_TICK_PER_SECOND);
+    }
+
+    result = rt_mb_recv(active_mbox->mailbox, &received, t);
+    sys_mbox_release(active_mbox, RT_TRUE);
+    if (result != RT_EOK || received == (rt_ubase_t)&g_sys_mbox_closed)
+    {
+        return SYS_ARCH_TIMEOUT;
+    }
+    if (msg)
+    {
+        *msg = (void *)received;
+    }
+
+    tick = rt_tick_get() - tick;
+    tick = tick * (1000 / RT_TICK_PER_SECOND);
+    return tick ? tick : 1;
+}
+
+/** Wait for a new message to arrive in the mbox
+ * @param mbox mbox to get a message from
+ * @param msg pointer where the message is stored
+ * @return 0 (milliseconds) if a message has been received
+ *         or SYS_MBOX_EMPTY if the mailbox is empty
+ */
+u32_t sys_arch_mbox_tryfetch(sys_mbox_t *mbox, void **msg)
+{
+    struct sys_mbox *active_mbox;
+    rt_ubase_t received = 0;
+    rt_err_t result;
+
+    active_mbox = sys_mbox_acquire(mbox, RT_FALSE);
+    if (!active_mbox)
+    {
+        return SYS_MBOX_EMPTY;
+    }
+    result = rt_mb_recv(active_mbox->mailbox, &received, 0);
+    sys_mbox_release(active_mbox, RT_FALSE);
+    if (result != RT_EOK || received == (rt_ubase_t)&g_sys_mbox_closed)
+    {
+        return SYS_MBOX_EMPTY;
+    }
+    if (msg)
+    {
+        *msg = (void *)received;
+    }
+    return 0;
+}
+
+#ifndef sys_mbox_valid
+/** Check if an mbox is valid/allocated:
+ *  return 1 for valid, 0 for invalid
+ */
+int sys_mbox_valid(sys_mbox_t *mbox)
+{
+    rt_ubase_t valid;
+    rt_base_t level = sys_mbox_global_lock();
+
+    valid = mbox && *mbox && !(*mbox)->closing;
+    sys_mbox_global_unlock(level);
+    return valid;
+}
+#endif
+
+#ifndef sys_mbox_set_invalid
+/** Set an mbox invalid so that sys_mbox_valid returns 0
+ */
+void sys_mbox_set_invalid(sys_mbox_t *mbox)
+{
+    rt_base_t level = sys_mbox_global_lock();
+
+    if (mbox)
+    {
+        *mbox = RT_NULL;
+    }
+    sys_mbox_global_unlock(level);
+}
+#endif
+
+/* ====================== System ====================== */
+
+/*
+ * Start a new thread named "name" with priority "prio" that will begin
+ * its execution in the function "thread()". The "arg" argument will be
+ * passed as an argument to the thread() function
+ */
+sys_thread_t sys_thread_new(const char    *name,
+                            lwip_thread_fn thread,
+                            void          *arg,
+                            int            stacksize,
+                            int            prio)
+{
+    rt_thread_t t;
+
+    RT_DEBUG_NOT_IN_INTERRUPT;
+
+    /* create thread */
+    t = rt_thread_create(name, thread, arg, stacksize, prio, 20);
+    RT_ASSERT(t != RT_NULL);
+
+    /* startup thread */
+    rt_thread_startup(t);
+
+    return t;
+}
+
+sys_prot_t sys_arch_protect(void)
+{
+    rt_base_t level;
+
+    /* disable interrupt */
+    level = rt_hw_interrupt_disable();
+
+    return level;
+}
+
+void sys_arch_unprotect(sys_prot_t pval)
+{
+    /* enable interrupt */
+    rt_hw_interrupt_enable(pval);
+
+    return;
+}
+
+void sys_arch_assert(const char *file, int line)
+{
+    rt_kprintf("\nAssertion: %d in %s, thread %s\n",
+               line, file, rt_thread_self()->name);
+    RT_ASSERT(0);
+}
+
+u32_t sys_jiffies(void)
+{
+    return rt_tick_get();
+}
+
+u32_t sys_now(void)
+{
+    return rt_tick_get() * (1000 / RT_TICK_PER_SECOND);
+}
+
+void *lwip_rt_malloc(size_t size)
+{
+    return rt_malloc_align(size, MEM_ALIGNMENT);
+}
+
+void *lwip_rt_calloc(size_t count, size_t size)
+{
+    size_t bytes;
+    void *mem;
+
+    if ((size != 0) && (count > ((size_t)-1) / size))
+    {
+        return RT_NULL;
+    }
+
+    bytes = count * size;
+    mem = rt_malloc_align(bytes, MEM_ALIGNMENT);
+    if (mem != RT_NULL)
+    {
+        rt_memset(mem, 0, bytes);
+    }
+
+    return mem;
+}
+
+void lwip_rt_free(void *mem)
+{
+    rt_free_align(mem);
+}
+
+#ifdef RT_LWIP_PPP
+u32_t sio_read(sio_fd_t fd, u8_t *buf, u32_t size)
+{
+    u32_t len;
+
+    RT_ASSERT(fd != RT_NULL);
+
+    len = rt_device_read((rt_device_t)fd, 0, buf, size);
+    if (len <= 0)
+        return 0;
+
+    return len;
+}
+
+u32_t sio_write(sio_fd_t fd, const u8_t *buf, u32_t size)
+{
+    RT_ASSERT(fd != RT_NULL);
+
+    return rt_device_write((rt_device_t)fd, 0, buf, size);
+}
+
+void sio_read_abort(sio_fd_t fd)
+{
+    rt_kprintf("read_abort\n");
+}
+
+void ppp_trace(int level, const char *format, ...)
+{
+    va_list args;
+    rt_size_t length;
+    static char rt_log_buf[RT_CONSOLEBUF_SIZE];
+
+    va_start(args, format);
+    length = rt_vsprintf(rt_log_buf, format, args);
+    rt_device_write((rt_device_t)rt_console_get_device(), 0, rt_log_buf, length);
+    va_end(args);
+}
+#endif
+
+/*
+ * export bsd socket symbol for RT-Thread Application Module
+ */
+#if LWIP_SOCKET
+#include <lwip/sockets.h>
+RTM_EXPORT(lwip_accept);
+RTM_EXPORT(lwip_bind);
+RTM_EXPORT(lwip_shutdown);
+RTM_EXPORT(lwip_getpeername);
+RTM_EXPORT(lwip_getsockname);
+RTM_EXPORT(lwip_getsockopt);
+RTM_EXPORT(lwip_setsockopt);
+RTM_EXPORT(lwip_close);
+RTM_EXPORT(lwip_connect);
+RTM_EXPORT(lwip_listen);
+RTM_EXPORT(lwip_recv);
+RTM_EXPORT(lwip_read);
+RTM_EXPORT(lwip_recvfrom);
+RTM_EXPORT(lwip_send);
+RTM_EXPORT(lwip_sendto);
+RTM_EXPORT(lwip_socket);
+RTM_EXPORT(lwip_write);
+RTM_EXPORT(lwip_select);
+RTM_EXPORT(lwip_ioctl);
+RTM_EXPORT(lwip_fcntl);
+
+RTM_EXPORT(lwip_htons);
+RTM_EXPORT(lwip_htonl);
+
+#if LWIP_DNS
+#include <lwip/netdb.h>
+RTM_EXPORT(lwip_gethostbyname);
+RTM_EXPORT(lwip_gethostbyname_r);
+RTM_EXPORT(lwip_freeaddrinfo);
+RTM_EXPORT(lwip_getaddrinfo);
+#endif
+
+#endif
+
+#if LWIP_DHCP
+#include <lwip/dhcp.h>
+RTM_EXPORT(dhcp_start);
+RTM_EXPORT(dhcp_renew);
+RTM_EXPORT(dhcp_stop);
+#endif
+
+#if LWIP_NETIF_API
+#include <lwip/netifapi.h>
+RTM_EXPORT(netifapi_netif_set_addr);
+#endif
+
+#if LWIP_NETIF_LINK_CALLBACK
+RTM_EXPORT(netif_set_link_callback);
+#endif
+
+#if LWIP_NETIF_STATUS_CALLBACK
+RTM_EXPORT(netif_set_status_callback);
+#endif
+
+RTM_EXPORT(netif_find);
+RTM_EXPORT(netif_set_addr);
+RTM_EXPORT(netif_set_ipaddr);
+RTM_EXPORT(netif_set_gw);
+RTM_EXPORT(netif_set_netmask);

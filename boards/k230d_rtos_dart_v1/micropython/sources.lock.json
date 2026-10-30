@@ -4,9 +4,7 @@
     {
       "path": "src/uboot/uboot",
       "url": "https://github.com/canmv-k230/u-boot",
-      "revision": "56a131d12108009012eca0204e7dd610a3e7d618",
-      "patch": "patches/src-uboot-uboot.patch",
-      "sha256": "d7514c39119234f1d6786e1b2fd0f5e5b7ad27c14586c4bc242513dbbebc8671"
+      "revision": "56a131d12108009012eca0204e7dd610a3e7d618"
     },
     {
       "path": "src/opensbi/opensbi",
@@ -16,9 +14,7 @@
     {
       "path": "src/rtsmart/rtsmart",
       "url": "https://github.com/canmv-k230/rtsmart",
-      "revision": "56852a6adb08305fdc3a576fb763e4d878b03d97",
-      "patch": "patches/src-rtsmart-rtsmart.patch",
-      "sha256": "8c98280ae1b180289b5fa9bd2b2a2e137b01fdcb85fc7daac00549444c7da005"
+      "revision": "56852a6adb08305fdc3a576fb763e4d878b03d97"
     },
     {
       "path": "src/rtsmart/libs",
@@ -33,16 +29,12 @@
     {
       "path": "src/rtsmart/examples",
       "url": "https://github.com/canmv-k230/k230_rtsmart_examples",
-      "revision": "0eccd20d2d26b237171a6c7b6a3479b7640f4dc6",
-      "patch": "patches/src-rtsmart-examples.patch",
-      "sha256": "92a59e61698c3cba2a73b914549ee46696b78602efba697565942bf0fafe2e92"
+      "revision": "0eccd20d2d26b237171a6c7b6a3479b7640f4dc6"
     },
     {
       "path": "src/rtsmart/mpp",
       "url": "https://github.com/canmv-k230/mpp",
-      "revision": "2b7e6a99a77e08434ddfde1c73604250a7948160",
-      "patch": "patches/src-rtsmart-mpp.patch",
-      "sha256": "827b2bca70957cd43853f6ea3c8f9e8a7a7e2b0bc72b367ec308fc7922987e94"
+      "revision": "2b7e6a99a77e08434ddfde1c73604250a7948160"
     },
     {
       "path": "src/rtsmart/rtsmart/kernel/bsp/maix3/drivers/extdrv/aic8800/firmware",
@@ -92,9 +84,7 @@
     {
       "path": "src/canmv",
       "url": "https://github.com/kendryte/canmv_k230",
-      "revision": "791c1ceee8acb4699d59d8dbf8f043ea3940a766",
-      "patch": "patches/src-canmv.patch",
-      "sha256": "13fd4c6ed8571f78b350b7d77bde046578770cdebc8bf6ece2aa22021a36e6fe"
+      "revision": "791c1ceee8acb4699d59d8dbf8f043ea3940a766"
     },
     {
       "path": "src/canmv/micropython",
@@ -126,5 +116,6 @@
       "url": "https://github.com/eliben/pycparser",
       "revision": "3cf6bf5eb16f5eadd4a058e41596145c407a79ad"
     }
-  ]
+  ],
+  "source_layout": "monorepo"
 }

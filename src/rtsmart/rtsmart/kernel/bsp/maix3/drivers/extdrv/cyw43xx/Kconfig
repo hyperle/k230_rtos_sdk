@@ -1,0 +1,22 @@
+menuconfig RT_USING_CYW43XX
+    bool "CYW43xx SDIO Wi-Fi (Recommend use brcmfmac)"
+    depends on RT_USING_WIFI && RT_USING_SDIO && !RT_USING_BRCMFMAC
+    default n
+    help
+        Enable the legacy CYW43xx SDIO Wi-Fi driver. It is mutually
+        exclusive with the native brcmfmac port because both drivers claim
+        the same Broadcom SDIO device IDs.
+
+    if RT_USING_CYW43XX
+        menu "Thread Settings"
+
+            config CYW43XX_THREAD_PRIORITY
+                int "Thread priority"
+                default 10
+
+            config CYW43XX_THREAD_STACK_SIZE
+                int "Thread stack size"
+                default 4096
+
+        endmenu
+    endif

@@ -1,0 +1,665 @@
+
+menu "MPP Configuration"
+    menu "Sensor Configuration"
+
+        choice
+                bool "Default SENSOR on CSI"
+                default MPP_DEFAULT_SENSOR_CSI_0
+
+                config MPP_DEFAULT_SENSOR_CSI_0
+                    bool "0"
+                config MPP_DEFAULT_SENSOR_CSI_1
+                    bool "1"
+                config MPP_DEFAULT_SENSOR_CSI_2
+                    bool "2"
+        endchoice
+
+        config MPP_SENSOR_DEFAULT_CSI
+            int
+            default 0 if MPP_DEFAULT_SENSOR_CSI_0
+            default 1 if MPP_DEFAULT_SENSOR_CSI_1
+            default 2 if MPP_DEFAULT_SENSOR_CSI_2
+
+        config MPP_ISP_CONFIG_INSTALL_BIN
+            bool "Install binary ISP configurations"
+            default y
+            help
+                Generate and install binary ISP configuration files.
+
+        config MPP_ISP_CONFIG_INSTALL_JSON_XML
+            bool "Install JSON and XML ISP configurations"
+            default y
+            help
+                Install the JSON and XML ISP source configuration files.
+
+        comment "Sensor AutoFocus Drivers Configuration"
+
+        menuconfig  MPP_ENABLE_SENSOR_AF
+            bool "Enable AutoFocus"
+            default n
+
+            if MPP_ENABLE_SENSOR_AF
+                config MPP_ENABLE_SENSOR_AF_DRV_DW9714P
+                    bool "Enable Driver DW9714P"
+                    default n
+            endif
+
+        comment "Sensor Hardware Configuration"
+
+        menuconfig MPP_ENABLE_CSI_DEV_0
+            bool "Enable CSI0"
+
+            if MPP_ENABLE_CSI_DEV_0
+                config MPP_CSI_DEV0_POWER
+                    int "CSI0 PowerDown GPIO"
+                    default -1
+                    help
+                        If board have no Powerdown, set to -1
+
+                config MPP_CSI_DEV0_RESET
+                    int "CSI0 Reset GPIO"
+                    default -1
+                    help
+                        If board have no Reset, set to -1
+
+                config MPP_CSI_DEV0_I2C_DEV
+                    string "CSI0 I2c Bus"
+                    default "i2c0"
+
+                choice MPP_CSI_DEV0_MCLK_NUM
+                    bool "CSI0 MCLK num"
+                    default MPP_CSI_DEV0_MCLK_INVALID
+
+                    config MPP_CSI_DEV0_MCLK_INVALID
+                        bool "CSI0 use external clock"
+                    config MPP_CSI_DEV0_MCLK_1
+                        bool "CSI0 use chip MCLK1"
+                    config MPP_CSI_DEV0_MCLK_2
+                        bool "CSI0 use chip MCLK2"
+                    config MPP_CSI_DEV0_MCLK_3
+                        bool "CSI0 use chip MCLK3"
+                endchoice
+
+                config MPP_CSI_DEV0_MCLK_NUM
+                    int
+                    default -1 if MPP_CSI_DEV0_MCLK_INVALID
+                    default 1 if MPP_CSI_DEV0_MCLK_1
+                    default 2 if MPP_CSI_DEV0_MCLK_2
+                    default 3 if MPP_CSI_DEV0_MCLK_3
+            endif
+
+        menuconfig MPP_ENABLE_CSI_DEV_1
+            bool "Enable CSI1"
+
+            if MPP_ENABLE_CSI_DEV_1
+                config MPP_CSI_DEV1_POWER
+                    int "CSI1 PowerDown GPIO"
+                    default -1
+                    help
+                        If board have no Powerdown, set to -1
+
+                config MPP_CSI_DEV1_RESET
+                    int "CSI1 Reset GPIO"
+                    default -1
+                    help
+                        If board have no Reset, set to -1
+
+                config MPP_CSI_DEV1_I2C_DEV
+                    string "CSI1 I2c Bus"
+                    default "i2c1"
+
+                choice MPP_CSI_DEV1_MCLK_NUM
+                    bool "CSI1 MCLK num"
+                    default MPP_CSI_DEV1_MCLK_INVALID
+
+                    config MPP_CSI_DEV1_MCLK_INVALID
+                        bool "CSI1 use external clock"
+                    config MPP_CSI_DEV1_MCLK_1
+                        bool "CSI1 use chip MCLK1"
+                    config MPP_CSI_DEV1_MCLK_2
+                        bool "CSI1 use chip MCLK2"
+                    config MPP_CSI_DEV1_MCLK_3
+                        bool "CSI1 use chip MCLK3"
+                endchoice
+
+                config MPP_CSI_DEV1_MCLK_NUM
+                    int
+                    default -1 if MPP_CSI_DEV1_MCLK_INVALID
+                    default 1 if MPP_CSI_DEV1_MCLK_1
+                    default 2 if MPP_CSI_DEV1_MCLK_2
+                    default 3 if MPP_CSI_DEV1_MCLK_3
+            endif
+
+        menuconfig MPP_ENABLE_CSI_DEV_2
+            bool "Enable CSI2"
+
+            if MPP_ENABLE_CSI_DEV_2
+                config MPP_CSI_DEV2_POWER
+                    int "CSI2 PowerDown GPIO"
+                    default -1
+                    help
+                        If board have no Powerdown, set to -1
+
+                config MPP_CSI_DEV2_RESET
+                    int "CSI2 Reset GPIO"
+                    default -1
+                    help
+                        If board have no Reset, set to -1
+
+                config MPP_CSI_DEV2_I2C_DEV
+                    string "CSI2 I2c Bus"
+                    default "i2c2"
+
+                choice MPP_CSI_DEV2_MCLK_NUM
+                    bool "CSI2 MCLK num"
+                    default MPP_CSI_DEV2_MCLK_INVALID
+
+                    config MPP_CSI_DEV2_MCLK_INVALID
+                        bool "CSI2 use external clock"
+                    config MPP_CSI_DEV2_MCLK_1
+                        bool "CSI2 use chip MCLK1"
+                    config MPP_CSI_DEV2_MCLK_2
+                        bool "CSI2 use chip MCLK2"
+                    config MPP_CSI_DEV2_MCLK_3
+                        bool "CSI2 use chip MCLK3"
+                endchoice
+
+                config MPP_CSI_DEV2_MCLK_NUM
+                    int
+                    default -1 if MPP_CSI_DEV2_MCLK_INVALID
+                    default 1 if MPP_CSI_DEV2_MCLK_1
+                    default 2 if MPP_CSI_DEV2_MCLK_2
+                    default 3 if MPP_CSI_DEV2_MCLK_3
+            endif
+
+        comment "Sensor Drivers Configuration"
+
+        menuconfig MPP_ENABLE_SENSOR_SC038HGS
+            bool "Enable SC038HGS (external 24 MHz, MIPI 1C1D)"
+            depends on MPP_ENABLE_CSI_DEV_0 || MPP_ENABLE_CSI_DEV_1 || MPP_ENABLE_CSI_DEV_2
+            help
+                SC038HGS V1.1 documented reset-default 640x480 RAW10 mode.
+                Requires an external 24 MHz oscillator and active-low PWDN.
+                PLL and analogue registers retain their silicon reset values.
+                Capture and receiver timing require validation on the module.
+
+            if MPP_ENABLE_SENSOR_SC038HGS
+                config MPP_SC038HGS_PIXEL_CLOCK_HZ
+                    int "SC038HGS verified Pixel CLK in Hz (0 = unknown)"
+                    range 0 1200000000
+                    default 0
+                    help
+                        Pixel CLK is the internal clock in fps = CLK/(HTS*VTS).
+                        It is not the external 24 MHz oscillator frequency.
+                        The V1.1 datasheet does not specify its reset frequency.
+                        Leave zero until verified. RAW register control, gain,
+                        test pattern and streaming remain available; fps and
+                        exposure in seconds return an unsupported error.
+
+                config MPP_SC038HGS_PHY_CLOCK
+                    int "SC038HGS CSI receiver PHY selection (1=800M, 2=1200M, 3=1600M)"
+                    range 1 3
+                    default 1
+                    help
+                        This configures the K230 receiver, not the sensor PLL.
+                        Verify the selection during hardware capture bring-up.
+
+                config MPP_SC038HGS_MONO
+                    bool "SC038HGS monochrome module"
+                    default y
+                    help
+                        Disable for a Bayer colour variant. Colour variants
+                        use the BGGR layout shown on datasheet page 31.
+            endif
+
+        menuconfig MPP_ENABLE_SENSOR_GC2093
+            bool "Enable GC2093"
+
+            if MPP_ENABLE_SENSOR_GC2093
+                config MPP_SENSOR_GC2093_ON_CSI0_USE_CHIP_CLK
+                    bool "GC2093 On CSI0 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_0
+                config MPP_SENSOR_GC2093_ON_CSI1_USE_CHIP_CLK
+                    bool "GC2093 On CSI1 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_1
+                config MPP_SENSOR_GC2093_ON_CSI2_USE_CHIP_CLK
+                    bool "GC2093 On CSI2 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_2
+            endif
+
+        menuconfig MPP_ENABLE_SENSOR_OV5647
+            bool "Enable OV5647"
+
+            if MPP_ENABLE_SENSOR_OV5647
+                config MPP_SENSOR_OV5647_ON_CSI0_USE_CHIP_CLK
+                    bool "OV5647 On CSI0 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_0
+                config MPP_SENSOR_OV5647_ON_CSI1_USE_CHIP_CLK
+                    bool "OV5647 On CSI1 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_1
+                config MPP_SENSOR_OV5647_ON_CSI2_USE_CHIP_CLK
+                    bool "OV5647 On CSI2 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_2
+            endif
+
+        menuconfig MPP_ENABLE_SENSOR_IMX335
+            bool "Enable IMX335"
+
+            if MPP_ENABLE_SENSOR_IMX335
+
+                config MPP_SENSOR_IMX335_ENABLE_4LANE_CONFIGURE
+                    bool "IMX335 Enable 4LANE Configure"
+                    default n
+                    help
+                        Default Only Enable 2LANE Configure
+
+                config MPP_SENSOR_IMX335_ON_CSI0_USE_CHIP_CLK
+                    bool "IMX335 On CSI0 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_0
+                config MPP_SENSOR_IMX335_ON_CSI1_USE_CHIP_CLK
+                    bool "IMX335 On CSI1 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_1 && !MPP_SENSOR_IMX335_ENABLE_4LANE_CONFIGURE
+
+                config MPP_SENSOR_IMX335_ON_CSI2_USE_CHIP_CLK
+                    bool "IMX335 On CSI2 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_2
+            endif
+
+        menuconfig MPP_ENABLE_SENSOR_SC132GS
+            bool "Enable SC123GS"
+            default n
+
+            if MPP_ENABLE_SENSOR_SC132GS
+
+                config MPP_ENABLE_SENSOR_SC132GS_ON_CSI0_USE_CHIP_CLK
+                    bool "SC123GS On CSI0 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_0
+
+                config MPP_ENABLE_SENSOR_SC132GS_ON_CSI1_USE_CHIP_CLK
+                    bool "SC123GS On CSI1 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_1
+
+                config MPP_ENABLE_SENSOR_SC132GS_ON_CSI2_USE_CHIP_CLK
+                    bool "SC123GS On CSI2 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_2
+            endif
+
+        menuconfig MPP_ENABLE_SENSOR_IMX290
+            bool "Enable IMX290"
+            default n
+
+            if MPP_ENABLE_SENSOR_IMX290
+
+                config MPP_SENSOR_IMX290_ON_CSI0_USE_CHIP_CLK
+                    bool "IMX290 On CSI0 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_0
+
+                config MPP_SENSOR_IMX290_ON_CSI1_USE_CHIP_CLK
+                    bool "IMX290 On CSI1 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_1
+
+                config MPP_SENSOR_IMX290_ON_CSI2_USE_CHIP_CLK
+                    bool "IMX290 On CSI2 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_2
+            endif
+
+        menuconfig MPP_ENABLE_SENSOR_SC130GS
+            bool "Enable SC130GS"
+            default n
+
+            if MPP_ENABLE_SENSOR_SC130GS
+
+                config MPP_ENABLE_SENSOR_SC130GS_ON_CSI0_USE_CHIP_CLK
+                    bool "SC130GS On CSI0 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_0
+
+                config MPP_ENABLE_SENSOR_SC130GS_ON_CSI1_USE_CHIP_CLK
+                    bool "SC130GS On CSI1 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_1
+
+                config MPP_ENABLE_SENSOR_SC130GS_ON_CSI2_USE_CHIP_CLK
+                    bool "SC130GS On CSI2 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_2
+            endif
+
+        menuconfig MPP_ENABLE_SENSOR_XS9950
+            bool "Enable XS9950"
+            default n
+
+            if MPP_ENABLE_SENSOR_XS9950
+
+                config MPP_ENABLE_SENSOR_XS9950_ON_CSI0_USE_CHIP_CLK
+                    bool "XS9950 On CSI0 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_0
+
+                config MPP_ENABLE_SENSOR_XS9950_ON_CSI1_USE_CHIP_CLK
+                    bool "XS9950 On CSI1 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_1
+
+                config MPP_ENABLE_SENSOR_XS9950_ON_CSI2_USE_CHIP_CLK
+                    bool "XS9950 On CSI2 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_2
+            endif
+
+        menuconfig MPP_ENABLE_SENSOR_IMX675
+            bool "Enable IMX675"
+            default n
+
+            if MPP_ENABLE_SENSOR_IMX675
+                config MPP_SENSOR_IMX675_ON_CSI0_USE_CHIP_CLK
+                    bool "IMX675 On CSI0 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_0
+                config MPP_SENSOR_IMX675_ON_CSI1_USE_CHIP_CLK
+                    bool "IMX675 On CSI1 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_1
+                config MPP_SENSOR_IMX675_ON_CSI2_USE_CHIP_CLK
+                    bool "IMX675 On CSI2 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_2
+            endif
+
+        menuconfig MPP_ENABLE_SENSOR_BF3238
+            bool "Enable BF3238"
+            default n
+
+            if MPP_ENABLE_SENSOR_BF3238
+
+                config MPP_ENABLE_SENSOR_BF3238_ON_CSI0_USE_CHIP_CLK
+                    bool "BF3238 On CSI0 Use CHIP MCLK"
+                    depends on MPP_ENABLE_CSI_DEV_0
+
+                config MPP_ENABLE_SENSOR_BF3238_ON_CSI1_USE_CHIP_CLK
+                    bool "BF3238 On CSI1 Use CHIP MCLK"
+                    depends on MPP_ENABLE_CSI_DEV_1
+
+                config MPP_ENABLE_SENSOR_BF3238_ON_CSI2_USE_CHIP_CLK
+                    bool "BF3238 On CSI2 Use CHIP MCLK"
+                    depends on MPP_ENABLE_CSI_DEV_2
+            endif
+
+        menuconfig MPP_ENABLE_SENSOR_OV13850
+            bool "Enable OV13850"
+            default n
+
+            if MPP_ENABLE_SENSOR_OV13850
+
+                config MPP_SENSOR_OV13850_ON_CSI0_USE_CHIP_CLK
+                    bool "OV13850 On CSI0 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_0
+
+                config MPP_SENSOR_OV13850_ON_CSI1_USE_CHIP_CLK
+                    bool "OV13850 On CSI1 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_1
+
+                config MPP_SENSOR_OV13850_ON_CSI2_USE_CHIP_CLK
+                    bool "OV13850 On CSI2 Use CHIP MCLK"
+                    default n
+                    depends on MPP_ENABLE_CSI_DEV_2
+            endif
+    endmenu
+
+    menu "Display Configuration"
+        comment "Display Hardware Configuration"
+
+        config MPP_DSI_ENABLE_VIRT
+            bool "Enable VIRT Display Driver "
+            default y
+
+        menuconfig MPP_ENABLE_DSI_HDMI
+            bool "Enable HDMI Display Driver"
+
+            if MPP_ENABLE_DSI_HDMI
+                config MPP_DSI_HDMI_RESET_PIN
+                    int "DSI-HDMI Reset GPIO"
+                    default 22
+
+                config MPP_DSI_HDMI_I2C_DEV
+                    string "DSI-HDMI I2c Bus"
+                    default "i2c3"
+            endif
+
+        menuconfig MPP_ENABLE_DSI_LCD
+            bool "Enable LCD Display Driver"
+
+            if MPP_ENABLE_DSI_LCD
+                config MPP_DSI_LCD_RESET_PIN
+                    int "DSI-LCD Reset GPIO"
+                    default 24
+
+                config MPP_DSI_LCD_BACKLIGHT_PIN
+                    int "DSI-LCD BackLight GPIO"
+                    default 25
+            endif
+
+        menuconfig MPP_ENABLE_SPI_LCD
+            bool "Enable SPI LCD Display Driver"
+
+            if MPP_ENABLE_SPI_LCD
+                choice MPP_SPI_LCD_BUS
+                    prompt "SPI Bus"
+                    default MPP_SPI_LCD_BUS_SPI1
+
+                    config MPP_SPI_LCD_BUS_SPI0
+                        bool "spi0 (OSPI controller)"
+
+                    config MPP_SPI_LCD_BUS_SPI1
+                        bool "spi1 (QSPI0)"
+
+                    config MPP_SPI_LCD_BUS_SPI2
+                        bool "spi2 (QSPI1)"
+                endchoice
+
+                config MPP_SPI_LCD_RESET_PIN
+                    int "SPI-LCD Reset GPIO (-1 if not used)"
+                    default 18
+
+                config MPP_SPI_LCD_BACKLIGHT_PIN
+                    int "SPI-LCD Backlight GPIO (-1 if not used)"
+                    default -1
+
+                config MPP_SPI_LCD_DC_PIN
+                    int "SPI-LCD Data/Command GPIO"
+                    default 17
+
+                config MPP_SPI_LCD_CS_PIN
+                    int "SPI-LCD Chip Select GPIO"
+                    default 14
+
+                config MPP_SPI_LCD_CLK_PIN
+                    int "SPI-LCD Clock GPIO"
+                    default 15
+
+                config MPP_SPI_LCD_D0_PIN
+                    int "SPI-LCD Data0/MOSI GPIO"
+                    default 16
+            endif
+
+        menuconfig MPP_ENABLE_QSPI_LCD
+            bool "Enable QSPI LCD Display Driver"
+
+            if MPP_ENABLE_QSPI_LCD
+                choice MPP_QSPI_LCD_BUS
+                    prompt "QSPI Bus"
+                    default MPP_QSPI_LCD_BUS_SPI1
+
+                    config MPP_QSPI_LCD_BUS_SPI0
+                        bool "spi0 (OSPI controller)"
+
+                    config MPP_QSPI_LCD_BUS_SPI1
+                        bool "spi1 (QSPI0)"
+
+                    config MPP_QSPI_LCD_BUS_SPI2
+                        bool "spi2 (QSPI1)"
+                endchoice
+
+                config MPP_QSPI_LCD_RESET_PIN
+                    int "QSPI-LCD Reset GPIO (-1 if not used)"
+                    default 20
+
+                config MPP_QSPI_LCD_BACKLIGHT_PIN
+                    int "QSPI-LCD Backlight GPIO (-1 if not used)"
+                    default -1
+
+                config MPP_QSPI_LCD_CS_PIN
+                    int "QSPI-LCD Chip Select GPIO"
+                    default 14
+
+                config MPP_QSPI_LCD_CLK_PIN
+                    int "QSPI-LCD Clock GPIO"
+                    default 15
+
+                config MPP_QSPI_LCD_D0_PIN
+                    int "QSPI-LCD Data0 GPIO"
+                    default 16
+
+                config MPP_QSPI_LCD_D1_PIN
+                    int "QSPI-LCD Data1 GPIO"
+                    default 17
+
+                config MPP_QSPI_LCD_D2_PIN
+                    int "QSPI-LCD Data2 GPIO"
+                    default 18
+
+                config MPP_QSPI_LCD_D3_PIN
+                    int "QSPI-LCD Data3 GPIO"
+                    default 19
+            endif
+
+        menuconfig MPP_ENABLE_OSPI_LCD
+            bool "Enable OSPI LCD Display Driver"
+            help
+              OSPI is fixed to spi0. Clock and data pins (D0-D7, DQS)
+              are hardware-fixed and not configurable.
+
+            if MPP_ENABLE_OSPI_LCD
+                config MPP_OSPI_LCD_CS_PIN
+                    int "OSPI-LCD Chip Select GPIO (-1 for hardware CS)"
+                    default 14
+
+                config MPP_OSPI_LCD_DC_PIN
+                    int "OSPI-LCD Data/Command GPIO"
+                    default 20
+
+                config MPP_OSPI_LCD_RESET_PIN
+                    int "OSPI-LCD Reset GPIO (-1 if not used)"
+                    default 17
+
+                config MPP_OSPI_LCD_BACKLIGHT_PIN
+                    int "OSPI-LCD Backlight GPIO (-1 if not used)"
+                    default -1
+            endif
+
+        comment "Display Panel Drivers Configuration"
+
+        menuconfig MPP_DSI_ENABLE_HDMI_LT9611
+            bool "Enable HDMI Display Panel Driver LT9611"
+            depends on MPP_ENABLE_DSI_HDMI
+
+            if MPP_DSI_ENABLE_HDMI_LT9611
+                config MPP_DSI_LT9611_I2C_SLV_ADDR
+                    hex "LT9611 Slave Address"
+                    default 0x3b
+            endif
+
+        config MPP_DSI_ENABLE_LCD_HX8399
+            bool "Enable LCD Display Panel Driver HX8399"
+            depends on MPP_ENABLE_DSI_LCD
+            default n
+
+        config MPP_DSI_ENABLE_LCD_ST7701
+            bool "Enable LCD Display Panel Driver ST7701"
+            depends on MPP_ENABLE_DSI_LCD
+            default n
+
+        config MPP_DSI_ENABLE_LCD_ILI9806
+            bool "Enable LCD Display Panel Driver ili9806"
+            depends on MPP_ENABLE_DSI_LCD
+            default n
+
+        config MPP_DSI_ENABLE_LCD_ILI9881
+            bool "Enable LCD Display Panel Driver ili9881"
+            depends on MPP_ENABLE_DSI_LCD
+            default n
+
+        config MPP_DSI_ENABLE_LCD_NT35516
+            bool "Enable LCD Display Panel Driver nt35516"
+            depends on MPP_ENABLE_DSI_LCD
+            default n
+
+        config MPP_DSI_ENABLE_LCD_NT35532
+            bool "Enable LCD Display Panel Driver nt35532"
+            depends on MPP_ENABLE_DSI_LCD
+            default n
+
+        config MPP_DSI_ENABLE_LCD_GC9503
+            bool "Enable LCD Display Panel Driver gc9503"
+            depends on MPP_ENABLE_DSI_LCD
+            default n
+
+        config MPP_DSI_ENABLE_LCD_ST7102
+            bool "Enable LCD Display Panel Driver st7102"
+            depends on MPP_ENABLE_DSI_LCD
+            default n
+
+        config MPP_DSI_ENABLE_LCD_AML020T
+            bool "Enable LCD Display Panel Driver aml020t"
+            depends on MPP_ENABLE_DSI_LCD
+            default n
+
+        config MPP_DSI_ENABLE_LCD_JD9852
+            bool "Enable LCD Display Panel Driver JD9852"
+            depends on MPP_ENABLE_DSI_LCD
+            default n
+
+        config MPP_SPI_ENABLE_LCD_ST7789
+            bool "Enable SPI LCD Panel Driver ST7789"
+            depends on MPP_ENABLE_SPI_LCD
+            default n
+
+        config MPP_OSPI_ENABLE_LCD_ST7789
+            bool "Enable I8080-over-OSPI LCD Panel Driver ST7789 240x280"
+            depends on MPP_ENABLE_OSPI_LCD
+            default n
+
+        config MPP_QSPI_ENABLE_LCD_NV3030B
+            bool "Enable QSPI LCD Panel Driver NV3030B"
+            depends on MPP_ENABLE_QSPI_LCD
+            default n
+    endmenu
+
+    menu "Middleware Configuration"
+        config MPP_ENABLE_MIDDLEWARE_LIB_FFMPEG
+            bool "Enable Build Lib ffmpeg"
+            default y
+        config MPP_ENABLE_MIDDLEWARE_LIB_RTSP_PUSHER
+            bool "Enable Build Lib Rtsp Pusher"
+            default n
+            select MPP_ENABLE_MIDDLEWARE_LIB_FFMPEG
+    endmenu
+
+endmenu

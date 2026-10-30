@@ -1,0 +1,17 @@
+# Enable/disable modules and 3rd-party libs to be included in interpreter
+
+# ssl module requires one of the TLS libraries below
+MICROPY_PY_SSL = 1
+# axTLS has minimal size but implements only a subset of modern TLS
+# functionality, so may have problems with some servers.
+MICROPY_SSL_AXTLS = 0
+# mbedTLS is more up to date and complete implementation, but also
+# more bloated.
+MICROPY_SSL_MBEDTLS = 0
+
+# we use mbedtls from rtsmart/libs/3rd-party
+
+ifeq ($(CONFIG_ENABLE_BLUETOOTH),y)
+MICROPY_PY_BLUETOOTH = 1
+MICROPY_BLUETOOTH_NIMBLE = 1
+endif

@@ -16,9 +16,9 @@
   disabled. For the custom MicroPython firmware, select
   `k230d_canmv_dart_v1_defconfig` and follow the
   [MicroPython build and usage guide](MICROPYTHON.md).
-- After mounting the filesystems, RT-Smart runs `/sdcard/app/launcher &`.
-  Application preloading (Fast Boot Configuration) is disabled, so the
-  launcher is loaded from the eMMC application partition.
+- The RT-Smart profile starts at the UART0 shell with no application
+  auto-execute command. Application preloading (Fast Boot Configuration)
+  is disabled. Wi-Fi support is enabled in both Dart V1 profiles.
 
 For the UART0 startup crash diagnosis, USB MTP behavior, repair image and
 first-use steps, see [UART0 / USB diagnosis](UART0_DIAGNOSIS.md).
@@ -115,10 +115,19 @@ test commands and hardware bring-up checks.
   period, PWM3/4/5 share another. Set a common period per group and adjust
   each servo pulse width independently. Choose the frequency and pulse
   range from the actual servo specification.
-- Wi-Fi is intentionally left unconfigured. SDIO1 remains present in the
-  pinmux but no Wi-Fi driver or REG_ON sequence is selected.
+- Wi-Fi: RTL8189FTV on SDIO1 (IO26-31), enabled in the RT-Smart
+  configuration. The CanMV configuration also exposes `network.WLAN`.
+  Power is controlled by the physical Wi-Fi switch; REG_ON GPIO is -1
+  (no GPIO control). Enable the switch before boot. Firmware build and
+  image checks passed on 2026-10-31; radio operation awaits board testing.
 
 ## Build
+
+All component sources are tracked by this root repository as ordinary files.
+Use `git add`, `git commit`, and `git push origin HEAD` from the root. No `repo sync`
+or submodule setup is needed. Upstream import revisions for the common components
+are recorded in [sources.lock.json](sources.lock.json).
+
 
 ```sh
 make k230d_rtos_dart_v1_defconfig
@@ -133,11 +142,19 @@ subsystem defconfigs automatically. Run them after selecting the board.
 The complete image is generated in `output/k230d_rtos_dart_v1_defconfig/`
 with a name starting with `RTOS_K230D_Dart_V1_rtsmart_`.
 The repository does not currently contain the user's `launcher` application.
-After flashing, install a compatible RT-Smart RISC-V ELF executable at
-`/sdcard/app/launcher` before expecting application auto-start to work.
-Here `/sdcard` is a mount point for an eMMC partition; it does not imply
-an external SD card. Replacing this file updates the application used on
-the next boot.
+To enable application auto-start, install a compatible RT-Smart RISC-V
+ELF executable at `/sdcard/app/launcher`, set `RTT_AUTO_EXEC_CMD` to
+`/sdcard/app/launcher &`, and rebuild. Here `/sdcard` is a mount point
+for an eMMC partition; it does not imply an external SD card.
+
+With the physical Wi-Fi switch on before boot, use the UART0 shell
+(115200 baud) to test the RTL8189FTV interface:
+
+```sh
+wifi scan
+wifi join "YOUR_SSID" "YOUR_PASSWORD"
+ifconfig
+```
 
 If application preloading is enabled later, its build-time file path must
 refer to a real executable available when `tools/gen_image_rtapp.py` runs,

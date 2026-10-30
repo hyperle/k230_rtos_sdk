@@ -1,0 +1,64 @@
+menu "CanMV Micropython Components Configurations"
+    comment "IDE/REPL UART Configuration"
+
+    choice
+        bool "IDE Debug UART"
+        default CANMV_REPL_UART_USB
+
+        config CANMV_REPL_UART_USB
+            bool "USB CDC (/dev/ttyGS0)"
+
+        config CANMV_REPL_UART_0
+            bool "UART 0"
+
+        config CANMV_REPL_UART_1
+            bool "UART 1"
+
+        config CANMV_REPL_UART_2
+            bool "UART 2"
+
+        config CANMV_REPL_UART_3
+            bool "UART 3"
+
+        config CANMV_REPL_UART_4
+            bool "UART 4"
+
+    endchoice
+
+    config CANMV_REPL_UART_ID
+        int
+        default -1 if CANMV_REPL_UART_USB
+        default 0  if CANMV_REPL_UART_0
+        default 1  if CANMV_REPL_UART_1
+        default 2  if CANMV_REPL_UART_2
+        default 3  if CANMV_REPL_UART_3
+        default 4  if CANMV_REPL_UART_4
+
+    config ENABLE_MODULE_CV_LITE
+        bool "Enable CV_Lite Module"
+        default y
+
+    config ENABLE_MODULE_UART_PERIODIC_TX
+        bool "Enable UART periodic TX module"
+        default n
+        help
+          Build the uart_periodic_tx module, which transmits complete UART
+          frames from a hardware timer without executing Python in the timer
+          callback.
+
+    config ENABLE_MODULE_WEBRTC
+        bool "Enable WebRTC module"
+        default y
+        select RTSMART_3RD_PARTY_ENABLE_LIBPEER
+        help
+          Build the native MicroPython WebRTC peer connection module.
+
+    config ENABLE_BLUETOOTH
+        bool "Enable Bluetooth module (NimBLE over RT-Smart HCI)"
+        default n
+        help
+          Build MicroPython's bluetooth module with the NimBLE host stack.
+          The RT-Smart image must expose at least one Bluetooth H:4
+          controller. CanMV selects the first available /dev/hciX device.
+
+endmenu

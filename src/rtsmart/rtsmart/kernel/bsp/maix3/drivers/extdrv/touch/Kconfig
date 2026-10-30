@@ -1,0 +1,169 @@
+menuconfig RT_USING_TOUCH
+    bool "Enable Touch Drive"
+
+    if RT_USING_TOUCH
+        choice TOUCH_DRV_MODEL
+            bool "Touch Drive Model"
+            default TOUCH_DRV_MODEL_INT_WITH_THREAD
+
+            config TOUCH_DRV_MODEL_POOL
+                bool "Pooling when user read"
+            config TOUCH_DRV_MODEL_INT_WITH_THREAD
+                bool "Device Int and Read in Thread"
+        endchoice
+
+        if TOUCH_DRV_MODEL_INT_WITH_THREAD
+            config TOUCH_DRV_THREAD_PRIO
+                int "Touch Thread Priority"
+                default 19
+            config TOUCH_DRV_THREAD_STACK_SIZE
+                int "Touch Thread Stack Size"
+                default 4096
+        endif
+
+        comment "Touch Device Drivers"
+
+        config TOUCH_TYPE_CHSC5XXX
+            bool "Enable Touch CHSC5xxx"
+            default n
+
+        menuconfig TOUCH_TYPE_CST128
+            bool "Enable Touch CST128 - FT5316 Compatible"
+            default n
+
+            if TOUCH_TYPE_CST128
+                config TOUCH_CST128_DFT_RANGE_X
+                    int "CST128 Default Range X"
+                config TOUCH_CST128_DFT_RANGE_Y
+                    int "CST128 Default Range Y"
+            endif
+
+        config TOUCH_TYPE_CST328
+            bool "Enable Touch CST328"
+            default n
+
+        menuconfig TOUCH_TYPE_FT5316
+            bool "Enable Touch FT5316"
+            default n
+
+            if TOUCH_TYPE_FT5316
+                config TOUCH_FT5316_DFT_RANGE_X
+                    int "FT5316 Default Range X"
+                config TOUCH_FT5316_DFT_RANGE_Y
+                    int "FT5316 Default Range Y"
+            endif
+
+        menuconfig TOUCH_TYPE_FT5406
+            bool "Enable Touch FT5406"
+            default n
+
+            if TOUCH_TYPE_FT5406
+                config TOUCH_FT5406_DFT_RANGE_X
+                    int "FT5406 Default Range X"
+                config TOUCH_FT5406_DFT_RANGE_Y
+                    int "FT5406 Default Range Y"
+            endif
+
+        config TOUCH_TYPE_GT911
+            bool "Enable Touch GT911"
+            default n
+
+        config TOUCH_TYPE_CF1124
+            bool "Enable Touch CF1124 (Sitronix)"
+            default n
+
+        config TOUCH_TYPE_ST7102
+            bool "Enable Touch ST7102 (LCD + Touch)"
+            default n
+
+        menuconfig TOUCH_TYPE_CST78XX
+            bool "Enable Touch CST_7_8XX"
+            default n
+
+            if TOUCH_TYPE_CST78XX
+                config TOUCH_CST78XX_DFT_RANGE_X
+                    int "CST_7_8XX Default Range X"
+                config TOUCH_CST78XX_DFT_RANGE_Y
+                    int "CST_7_8XX Default Range Y"
+            endif
+
+        comment "Touch Default Device"
+
+        menuconfig TOUCH_DEFAULT_DEVICE
+            bool "Enable Defautl Touch Device"
+            default y
+
+            if TOUCH_DEFAULT_DEVICE
+                config TOUCH_DEV_INT_PIN
+                    int "Touch Device INT Pin"
+                    default -1
+
+                choice
+                    bool "Touch Device INT Edge"
+                    default TOUCH_DEV_INT_EDGE_FALLING
+
+                    config TOUCH_DEV_INT_EDGE_RISING
+                        bool "RISING"
+                    config TOUCH_DEV_INT_EDGE_FALLING
+                        bool "FALLING"
+                    config TOUCH_DEV_INT_EDGE_BOTH
+                        bool "BOTH"
+                    config TOUCH_DEV_INT_EDGE_HIGH
+                        bool "HIGH"
+                    config TOUCH_DEV_INT_EDGE_LOW
+                        bool "LOW"
+                endchoice
+
+                config TOUCH_DEV_INT_EDGE
+                    int
+                    default 0 if TOUCH_DEV_INT_EDGE_RISING
+                    default 1 if TOUCH_DEV_INT_EDGE_FALLING
+                    default 2 if TOUCH_DEV_INT_EDGE_BOTH
+                    default 3 if TOUCH_DEV_INT_EDGE_HIGH
+                    default 4 if TOUCH_DEV_INT_EDGE_LOW
+
+                config TOUCH_DEV_RST_PIN
+                    int "Touch Device RST Pin"
+                    default -1
+
+                config TOUCH_DEV_RST_PIN_VALID_VALUE
+                    int "Touch Device RST Pin Valid Value"
+                    default 0
+
+                choice
+                    bool "Touch Device I2C Bus"
+                    default TOUCH_DEV_I2C_BUS_3
+
+                    config TOUCH_DEV_I2C_BUS_0
+                        bool "I2C 0"
+                    config TOUCH_DEV_I2C_BUS_1
+                        bool "I2C 1"
+                    config TOUCH_DEV_I2C_BUS_2
+                        bool "I2C 2"
+                    config TOUCH_DEV_I2C_BUS_3
+                        bool "I2C 3"
+                    config TOUCH_DEV_I2C_BUS_4
+                        bool "I2C 4"
+                endchoice
+
+                config TOUCH_DEV_I2C_BUS
+                    int
+                    default 0 if TOUCH_DEV_I2C_BUS_0
+                    default 1 if TOUCH_DEV_I2C_BUS_1
+                    default 2 if TOUCH_DEV_I2C_BUS_2
+                    default 3 if TOUCH_DEV_I2C_BUS_3
+                    default 4 if TOUCH_DEV_I2C_BUS_4
+                
+                config TOUCH_DEV_I2C_BUS_SPEED
+                    int "Touch Device I2C Bus Speed"
+                    default 400000
+
+                config TOUCH_RANGE_X
+                    int "Touch Range X, Origin of Touch Output"
+                    default 480
+
+                config TOUCH_RANGE_Y
+                    int "Touch Range Y, Origin of Touch Output"
+                    default 800
+            endif
+    endif

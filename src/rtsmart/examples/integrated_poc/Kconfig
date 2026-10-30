@@ -1,0 +1,10 @@
+if RTSMART_ENABLE_BUILD_INTEGRATED_EXAMPLES
+    config RTSMART_INTEGRATED_EXAMPLES_SMART_IPC
+        bool "Smart IPC examples"
+        default y
+        select RTSMART_3RD_PARTY_ENABLE_LIBPEER
+    config RTSMART_INTEGRATED_EXAMPLES_MULTISOURCE_AI_ANALYZER
+        bool "Multisource AI Analyzer"
+        default n
+        select MPP_ENABLE_MIDDLEWARE_LIB_FFMPEG
+endif

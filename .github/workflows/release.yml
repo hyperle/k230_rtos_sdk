@@ -14,29 +14,10 @@ jobs:
         shell: bash
 
     steps:
-      - name: Setup SSH
-        run: |
-          # configure git
-          git config --global user.name kendryte747
-          git config --global user.email kendryte747@gmail.com
-          # update ssh key
-          mkdir -p ~/.ssh
-          echo "${{ secrets.ACTIONS_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-      - name: Install repo
-        run: |
-          # install repo
-          mkdir -p ~/.bin/
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
-          chmod +x ~/.bin/repo
-
-      - name: Prepare code
-        run: |
-          rm -rf *
-          ls -alh
-          ~/.bin/repo init -u git@github.com:canmv-k230/manifest.git -m rtos_${{ github.ref_name }}.xml
-          ~/.bin/repo sync
+      - name: Check out firmware sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Prepare Environment
         run: |
@@ -70,15 +51,15 @@ jobs:
             echo "-------------------"
           done
 
-      - name: Generate release.xml
-        run: |
-          ~/.bin/repo manifest -r -o release_${{ github.ref_name }}.xml
+      - name: Record source revision
+        run: git rev-parse HEAD > SOURCE_REVISION.txt
 
       - name: Upload images to Release Asset
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
+            SOURCE_REVISION.txt
             output/**/*.img.gz
             output/**/*.img.gz.md5
           generate_release_notes: true

@@ -1,0 +1,7 @@
+out
+k230_bin
+*.o
+*.o.d
+test_*.elf
+
+3rd-party/libpeer/3rd-party/lib

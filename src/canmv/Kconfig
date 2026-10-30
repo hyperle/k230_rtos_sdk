@@ -1,0 +1,13 @@
+menuconfig SDK_ENABLE_CANMV
+    bool "CanMV Components Configuration"
+    default n
+
+    if SDK_ENABLE_CANMV
+        config SDK_CANMV_COPY_EXAMPLES
+            bool "Copy CanMV Examples"
+            default y
+
+        source "$(SDK_CANMV_SRC_DIR)/Kconfig.micropython"
+        source "$(SDK_CANMV_SRC_DIR)/Kconfig.openmv"
+
+    endif

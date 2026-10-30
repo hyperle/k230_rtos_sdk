@@ -20,30 +20,10 @@ Additionally, install Python packages using `pip`:
 pip3 install pycryptodome gmssl scons==3.1.2
 ```
 
-### Repository Requirements
+### Source Layout
 
-To manage the source code, you need to install the `repo` tool:
-
-1. Create a directory for the `repo` binary and add it to your `PATH`:
-
-   ```bash
-   mkdir -p ~/.bin
-   export PATH="${HOME}/.bin:${PATH}"
-   ```
-
-2. Download the `repo` script and make it executable:
-
-   ```bash
-   curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
-   chmod a+rx ~/.bin/repo
-   ```
-
-3. Persist the `PATH` change by adding it to your shell configuration file (e.g., `~/.bashrc`):
-
-   ```bash
-   echo 'export PATH="${HOME}/.bin:${PATH}"' >> ~/.bashrc
-   source ~/.bashrc
-   ```
+This fork tracks the SDK and component sources in one Git repository. No `repo`
+installation, manifest sync, or submodule initialization is required.
 
 ## Building the Project
 
@@ -51,17 +31,19 @@ To manage the source code, you need to install the `repo` tool:
 
 ### Get the Source Code
 
-Initialize and sync the repository to get download the source code:
+Clone your private repository and select the firmware branch:
 
 ```bash
-# from github with https
-repo init -u https://github.com/canmv-k230/manifest -b master --repo-url=https://github.com/canmv-k230/git-repo.git
-
-# or from gitee with ssh, need setup your ssh key
-repo init -u git@gitee.com:canmv-k230/manifest.git -b master --repo-url=git@gitee.com:canmv-k230/git-repo.git
-
-repo sync
+git clone --branch micropython https://github.com/hyperle/k230_rtos_sdk.git
+cd k230_rtos_sdk
+# For RT-Smart firmware instead:
+# git switch dart_control_board
 ```
+
+Use `k230d_rtos_dart_v1_defconfig` on `dart_control_board`, or
+`k230d_canmv_dart_v1_defconfig` on `micropython`. Both branches include the common
+RT-Smart, MPP, U-Boot, OpenSBI, library, and model sources. The MicroPython branch
+also includes CanMV, the interpreter, and its resources.
 
 ### Build for a Specific Board
 
@@ -74,13 +56,14 @@ repo sync
 2. **List all available configurations**:
 
    ```bash
-   make list_def
+   make list-def
    ```
 
 3. **Select a configuration** for your board:
 
    ```bash
-   make k230_canmv_defconfig  # Replace with the appropriate defconfig for your board
+   make k230d_canmv_dart_v1_defconfig  # micropython branch
+   # make k230d_rtos_dart_v1_defconfig  # dart_control_board branch
    ```
 
 4. **Start the build process**:

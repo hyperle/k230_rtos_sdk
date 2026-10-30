@@ -1,0 +1,40 @@
+# RT-Thread building script for component
+
+from building import *
+
+cwd     = GetCurrentDir()
+src     = []
+CPPPATH = [cwd]
+
+src += Glob('drv_touch.c')
+
+if GetDepend(['TOUCH_TYPE_FT5316']):
+    src += Glob('ft5316.c')
+
+if GetDepend(['TOUCH_TYPE_FT5406']):
+    src += Glob('ft5406.c')
+
+if GetDepend(['TOUCH_TYPE_CST128']):
+    src += Glob('cst128.c')
+
+if GetDepend(['TOUCH_TYPE_CST328']):
+    src += Glob('cst328.c')
+
+if GetDepend(['TOUCH_TYPE_CHSC5XXX']):
+    src += Glob('chsc5xxx.c')
+
+if GetDepend(['TOUCH_TYPE_GT911']):
+    src += Glob('gt911.c')
+
+if GetDepend(['TOUCH_TYPE_ST7102']):
+    src += Glob('st7102.c')
+
+if GetDepend(['TOUCH_TYPE_CST78XX']):
+    src += Glob('cst78xx.c')
+
+if GetDepend(['TOUCH_TYPE_CF1124']):
+    src += Glob('cf1124.c')
+
+group = DefineGroup('touch', src, depend = ['RT_USING_TOUCH'], CPPPATH = CPPPATH)
+
+Return('group')

@@ -1,0 +1,6 @@
+menu "Drivers Configuration"
+
+    source "drivers/interdrv/Kconfig"
+    source "drivers/extdrv/Kconfig"
+
+endmenu

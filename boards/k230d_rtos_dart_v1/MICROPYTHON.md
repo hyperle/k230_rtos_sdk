@@ -20,27 +20,23 @@
 
 本次拉取到的 CanMV 分支头为 `0ec86ce`，但未将它与旧版 SDK/MPP 混用。
 后续升级应一起更新官方 manifest 中相互配套的组件，并重新验证驱动和 API。
-完整 SHA、来源和补丁校验值见 [sources.lock.json](micropython/sources.lock.json)。
+各组件的上游来源和导入基线见 [sources.lock.json](micropython/sources.lock.json)。
 
-SDK 通过 `repo` 管理多个独立仓库，主仓库忽略 `src/canmv`、`src/rtsmart/rtsmart`、
-`src/rtsmart/mpp` 等目录。为使当前分支可以复现，
-[patches](micropython/patches) 保存了 U-Boot 板级适配、RT-Smart 的 UART0/USB/AI2D
-修复和摄像头引脚初始化、SC038HGS 驱动与测试、RAW 采集示例、CanMV 板级入口。
-这些补丁来自现有工作区；未将它们提交到各子仓库。
+本分支已改为单一 Git 仓库：CanMV、MicroPython、RT-Smart、MPP、U-Boot 和所需
+第三方源码均作为普通文件直接提交，包含当前板级、Wi-Fi、USB 和 SC038HGS 适配。
+在根目录执行 `git add`、`git commit` 和 `git push origin micropython` 即可保存全部改动。
+不再需要 `repo sync`、子模块初始化或额外应用板级补丁。
 
 ## 构建
 
 已有当前多仓库工作区时：
 
 ```sh
-python3 tools/prepare_dart_micropython.py --check
 make k230d_canmv_dart_v1_defconfig
 make NCPUS=8
 ```
 
-选择此 defconfig 会自动运行准备脚本：先核对所有子仓库的固定版本和补丁，
-再应用缺失补丁。已经应用的补丁会跳过；版本不符或文件冲突会报错。
-脚本不联网、不切换分支、不清理本地修改。
+此 defconfig 直接使用本分支内的源码和板级配置，启用 MicroPython 自动启动。
 
 推荐使用[官方构建容器](https://www.kendryte.com/k230_canmv/zh/main/userguide/how_to_build.html)。
 当前机器已经有镜像和工具链卷，以下命令可离线构建。
@@ -59,10 +55,12 @@ docker run --rm --network none \
   ghcr.io/huangzhenming/k230-builder:latest make NCPUS=8
 ```
 
-新工作区先按官方流程同步源码，再用
-[manifest.xml](micropython/manifest.xml) 固定各组件版本。此 manifest 的主仓库固定为
-适配基线 `11ef1a0`；同步后需把本分支的提交应用到主仓库，再执行上述构建命令。
-不要在有未保存修改的工作区直接执行全量 `repo sync`。
+新工作区直接克隆自己的根仓库并选择本分支：
+
+```sh
+git clone --branch micropython https://github.com/hyperle/k230_rtos_sdk.git
+cd k230_rtos_sdk
+```
 
 输出位于 `output/k230d_canmv_dart_v1_defconfig/`：
 
@@ -89,7 +87,9 @@ RT-Smart 挂载 eMMC 后执行 `/sdcard/micropython &`，MicroPython 再运行
 - UART0，IO38/IO39，115200：系统控制台。
 - USB0 CDC (`/dev/ttyGS0`)：MicroPython REPL / CanMV IDE。
 - USB 保留 CDC + MTP，以及原分支的启动和传输修复；未启用双 CDC。
-- Wi-Fi、USB 网络和 WebRTC 默认关闭。
+- Wi-Fi 已启用 RTL8189FTV / SDIO1 和 `network.WLAN`（2026-10-31 配置修复）；
+  Wi-Fi 机械开关由用户手动打开，`BSP_WIFI_SDIO_REG_ON_PIN=-1` 不控制 GPIO。
+  USB 网络和 WebRTC 仍默认关闭。镜像编译与内容校验通过，尚未烧录验证无线连接。
 - DDR 使用 K230D 固定 128 MiB：RT-Smart 58 MiB（含 8 MiB 内核堆）、MMZ 70 MiB；
   MicroPython 默认 GC 堆为 4 MiB，位于 RT-Smart 用户空间。
 
@@ -133,8 +133,7 @@ RAW 直采可按 [SC038HGS.md](SC038HGS.md) 构建 `sample_sc038hgs`，绕过 IS
 2026-10-24：官方容器完整构建返回 0；直接从最终镜像 FAT 分区提取并核对了
 RISC-V 64 位 MicroPython ELF、启动脚本和板级示例，MBR 偏移及 gzip 完整性均通过。
 SC038HGS 真实驱动的主机模拟矩阵（时钟 × 黑白/彩色 × CSI0/1/2）12 组全部通过；
-5 个子仓库的适配补丁均能从固定版本的原始文件恢复，准备脚本的只检查模式、
-冲突前置检查、重复执行和补丁校验拒绝行为均验证通过。
+当时的 5 个子仓库适配补丁和准备脚本检查均通过；2026-10-31 起这些适配已直接纳入根仓库源码。
 尚未将本次镜像烧录到开发板，USB REPL、外设运行和摄像头采图需要上板验证。
 
 实现参考：

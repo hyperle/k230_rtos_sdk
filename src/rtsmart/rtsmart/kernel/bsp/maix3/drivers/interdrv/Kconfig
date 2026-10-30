@@ -1,0 +1,496 @@
+menu "InterDriver"
+    menuconfig RT_USING_ADC
+        bool "Using ADC device drivers"
+        default n
+
+        if RT_USING_ADC
+            config RT_ADC_ENABLE_ACODEC_HP_DETECT
+                bool "Enable acodec headphone detect"
+                default n
+
+            config RT_ADC_ACODEC_HP_DETECT_CHANNEL
+                int "Acodec headphone detect ADC channel"
+                range 0 5
+                default 5
+                depends on RT_ADC_ENABLE_ACODEC_HP_DETECT
+        endif
+
+    menuconfig RT_USING_CIPHER
+        bool "Enable CIPHER"
+        default n
+
+        if RT_USING_CIPHER
+            config RT_USING_AES
+                bool "Use HW AES accelerator"
+                default n
+            config RT_USING_HASH
+                bool "Use HW SHA256 accelerator"
+                default n
+            menuconfig RT_USING_PUFS
+                bool "Use HW PUFS accelerator"
+                default n
+
+                if RT_USING_PUFS
+                    config RT_USING_PUFS_FILE_HASH
+                        bool "Enable calculate file hash with pufs"
+                        default n
+                        depends on RT_USING_MSH
+                        help
+                            Enable the PUFS file-hash MSH commands for calculating a
+                            file digest with the PUFS hash engine.
+
+                            Command provided:
+                            - sha256 <path>
+                            - pufs_file_hash <path> [sha224|sha256|sha384|sha512|sha512_224|sha512_256|sm3]
+
+                    config RT_PUFS_ENABLE_BUILTIN_CMD
+                        bool "Enable pufs msh commands"
+                        default n
+                        depends on RT_USING_MSH
+                        help
+                            Enable built-in MSH commands for the PUFS driver.
+
+                            Commands provided:
+                            - pufs_otp read <addr> <len>
+                            - pufs_otp_sec query
+                            - pufs_otp_sec write <jtag|secure_boot|isp|all> [...]
+                            - pufs_otp_sec lock
+
+                    config RT_PUFS_OTP_WRITE_ENABLE
+                        bool "Enable OTP write and lock operations (DANGER: irreversible)"
+                        default n
+                        help
+                            When enabled, OTP write, lock, key-program and zeroize
+                            operations will actually program the one-time-programmable
+                            fuses.  This is IRREVERSIBLE.
+
+                            When disabled (default), these operations only print what
+                            would be done and return success without touching hardware.
+                            Use this dry-run mode to verify your OTP programming flow
+                            before committing.
+
+                            User-accessible OTP range: 0x100-0x3FF (OTPKEY_8..31).
+                            Addresses below 0x100 are reserved for system keys.
+                endif
+        endif
+
+    config RT_FPIOA_ENABLE_BUILTIN_CMD
+        bool "Enable fpioa test command"
+        default n
+
+    config RT_USING_VG_LITE
+        bool "Enable VG-Lite GPU driver"
+        default y
+        depends on RT_USING_USERSPACE
+
+    config RT_USING_GNNE
+        bool "Enable GNNE driver for ai"
+        default y
+
+    config RT_USING_FFT
+        bool "Enable FFT driver"
+        default n
+        depends on RT_USING_MPP
+
+    menuconfig RT_USING_GPIO
+        bool "Enable GPIO Driver"
+        default n
+
+        if RT_USING_GPIO
+            config RT_GPIO_ENABLE_BUILTIN_CMD
+                bool "Enable gpio test command"
+                depends on RT_USING_MSH
+                default n
+                help
+                    Enable the built-in GPIO MSH test command.
+
+                    Commands provided:
+                    - gpio mode <pin> <mode>
+                    - gpio write <pin> <value>
+                    - gpio read <pin>
+                    - gpio pulse <pin> <high_ms> <low_ms> [count]
+                    - gpio irq <pin> <mode>
+                    - gpio irq_enable <pin>
+                    - gpio irq_disable <pin>
+        endif
+
+    menuconfig RT_USING_HARDLOCK
+        bool "Enable HardLock Driver"
+        default n
+
+        if RT_USING_HARDLOCK
+            config RT_HARD_LOCK_USE_DUMMY
+                bool "Use Dummy HardLock Impl"
+                default y
+        endif
+
+    menuconfig RT_USING_HWTIMER
+        bool "Using hardware timer device drivers"
+        default n
+
+        if RT_USING_HWTIMER
+            choice
+                bool "Timer IRQ Method"
+
+                config RT_TIMER_IRQ_METHOD_WORKQUEUE
+                    bool "WorkQueue"
+                config RT_TIMER_IRQ_METHOD_DIRECT
+                    bool "Direct"
+            endchoice
+
+            config RT_USING_HW_TIMER0
+                bool "Enable HW Timer0"
+                default n
+            config RT_USING_HW_TIMER1
+                bool "Enable HW Timer1"
+                default n
+            config RT_USING_HW_TIMER2
+                bool "Enable HW Timer2"
+                default n
+            config RT_USING_HW_TIMER3
+                bool "Enable HW Timer3"
+                default n
+            config RT_USING_HW_TIMER4
+                bool "Enable HW Timer4"
+                default n
+            config RT_USING_HW_TIMER5
+                bool "Enable HW Timer5"
+                default n
+        endif
+
+    menuconfig RT_USING_I2C
+        bool "Enable I2C"
+        default n
+
+        if RT_USING_I2C
+            config RT_USING_SOFT_I2C
+                bool "Enable Soft I2C"
+                default n
+
+            config RT_USING_I2C0
+                bool "Enable I2C0"
+                default n
+            if RT_USING_I2C0
+                choice I2C0_MODE_CHOICE
+                    bool "I2C0 mode"
+                    default I2C0_MODE_MASTER
+                    config I2C0_MODE_MASTER
+                        bool "Master"
+                    config I2C0_MODE_SLAVE
+                        bool "Slave"
+                endchoice
+                config I2C0_MODE
+                    int
+                    default 0 if I2C0_MODE_MASTER
+                    default 1 if I2C0_MODE_SLAVE
+            endif
+
+            config RT_USING_I2C1
+                bool "Enable I2C1"
+                default n
+            if RT_USING_I2C1
+                choice I2C1_MODE_CHOICE
+                    bool "I2C1 mode"
+                    default I2C1_MODE_MASTER
+                    config I2C1_MODE_MASTER
+                        bool "Master"
+                    config I2C1_MODE_SLAVE
+                        bool "Slave"
+                endchoice
+                config I2C1_MODE
+                    int
+                    default 0 if I2C1_MODE_MASTER
+                    default 1 if I2C1_MODE_SLAVE
+            endif
+
+            config RT_USING_I2C2
+                bool "Enable I2C2"
+                default n
+            if RT_USING_I2C2
+                choice I2C2_MODE_CHOICE
+                    bool "I2C2 mode"
+                    default I2C2_MODE_MASTER
+                    config I2C2_MODE_MASTER
+                        bool "Master"
+                    config I2C2_MODE_SLAVE
+                        bool "Slave"
+                endchoice
+                config I2C2_MODE
+                    int
+                    default 0 if I2C2_MODE_MASTER
+                    default 1 if I2C2_MODE_SLAVE
+            endif
+
+            config RT_USING_I2C3
+                bool "Enable I2C3"
+                default n
+            if RT_USING_I2C3
+                choice I2C3_MODE_CHOICE
+                    bool "I2C3 mode"
+                    default I2C3_MODE_MASTER
+                    config I2C3_MODE_MASTER
+                        bool "Master"
+                    config I2C3_MODE_SLAVE
+                        bool "Slave"
+                endchoice
+                config I2C3_MODE
+                    int
+                    default 0 if I2C3_MODE_MASTER
+                    default 1 if I2C3_MODE_SLAVE
+            endif
+
+            config RT_USING_I2C4
+                bool "Enable I2C4"
+                default n
+            if RT_USING_I2C4
+                choice I2C4_MODE_CHOICE
+                    bool "I2C4 mode"
+                    default I2C4_MODE_MASTER
+                    config I2C4_MODE_MASTER
+                        bool "Master"
+                    config I2C4_MODE_SLAVE
+                        bool "Slave"
+                endchoice
+                config I2C4_MODE
+                    int
+                    default 0 if I2C4_MODE_MASTER
+                    default 1 if I2C4_MODE_SLAVE
+            endif
+        endif
+
+    config RT_USING_PDMA
+        bool "Enable PDMA Driver"
+        default n
+
+    menuconfig RT_USING_PWM
+        bool "Using PWM device drivers"
+        default n
+
+        if RT_USING_PWM
+            config RT_PWM_ENABLE_BUILTIN_CMD
+                    bool "Enable pwm test command"
+                    default n
+        endif
+
+    menuconfig RT_USING_RTC_PMU
+        bool "Using RTC/PMU device drivers"
+        default n
+        select RT_USING_RTC
+
+    if RT_USING_RTC_PMU
+        menu "PMU PAD64 long press"
+            config RT_PMU_LONG_PRESS_SHUTDOWN_CONFIG
+                bool "Modify PMU long press shutdown seconds"
+                default n
+                help
+                    Enable this option to override the software long-press
+                    shutdown delay while the system is running.
+
+            if RT_PMU_LONG_PRESS_SHUTDOWN_CONFIG
+                config RT_PMU_SOFT_SHUTDOWN_SECONDS
+                    int "PMU long press shutdown seconds"
+                    default 5
+                    range 1 30
+            endif
+
+            config RT_PMU_LONG_PRESS_POWERON_CONFIG
+                bool "Modify PMU long press poweron seconds"
+                default n
+                help
+                    Enable this option to override the PMU hardware
+                    long-press wakeup threshold after poweroff.
+
+            if RT_PMU_LONG_PRESS_POWERON_CONFIG
+                config RT_PMU_LONG_PRESS_POWERON_SECONDS
+                    int "PMU long press poweron seconds"
+                    default 5
+                    range 1 30
+            endif
+        endmenu
+
+        menuconfig RT_PMU_SHUTDOWN_WAKEUP
+            bool "PMU shutdown wakeup PADs"
+            default n
+            help
+                Enable an extra PMU input PAD as a wakeup source after
+                shutdown. PAD64 is reserved for the power-key long-press path.
+
+        if RT_PMU_SHUTDOWN_WAKEUP
+            menuconfig RT_PMU_SHUTDOWN_WAKEUP_PAD65
+                bool "Enable PAD65 shutdown wakeup"
+            if RT_PMU_SHUTDOWN_WAKEUP_PAD65
+                source "drivers/interdrv/pmu/Kconfig.pad65"
+            endif
+
+            menuconfig RT_PMU_SHUTDOWN_WAKEUP_PAD66
+                bool "Enable PAD66 shutdown wakeup"
+            if RT_PMU_SHUTDOWN_WAKEUP_PAD66
+                source "drivers/interdrv/pmu/Kconfig.pad66"
+            endif
+
+            menuconfig RT_PMU_SHUTDOWN_WAKEUP_PAD67
+                bool "Enable PAD67 shutdown wakeup"
+            if RT_PMU_SHUTDOWN_WAKEUP_PAD67
+                source "drivers/interdrv/pmu/Kconfig.pad67"
+            endif
+
+            menuconfig RT_PMU_SHUTDOWN_WAKEUP_PAD68
+                bool "Enable PAD68 shutdown wakeup"
+                default y
+            if RT_PMU_SHUTDOWN_WAKEUP_PAD68
+                source "drivers/interdrv/pmu/Kconfig.pad68"
+            endif
+
+            menuconfig RT_PMU_SHUTDOWN_WAKEUP_PAD69
+                bool "Enable PAD69 shutdown wakeup"
+            if RT_PMU_SHUTDOWN_WAKEUP_PAD69
+                source "drivers/interdrv/pmu/Kconfig.pad69"
+            endif
+        endif
+    endif
+
+    menuconfig RT_USING_SDIO
+        bool "Enable SDIO Driver"
+        default n
+
+        if RT_USING_SDIO
+            config RT_USING_SDIO0
+                bool "Enable SDIO0"
+                default n
+
+            if RT_USING_SDIO0
+                config RT_SDIO0_EMMC
+                    bool "SDIO0 device is emmc"
+                    default n
+
+                config RT_SDIO0_1V8
+                    bool "SDIO0 device is 1.8V"
+                    default n
+
+                config RT_SDIO0_HS200
+                    bool "Enable SDIO0 eMMC HS200"
+                    depends on RT_SDIO0_EMMC && RT_SDIO0_1V8
+                    default n
+                    help
+                        Advertise HS200 support for validated 1.8V eMMC boards.
+
+                choice
+                    bool "SDIO0 Bus Max Width"
+                    default SDIO0_BUS_WIDTH_4BIT
+
+                    config SDIO0_BUS_WIDTH_4BIT
+                        bool "4Bit"
+                    config SDIO0_BUS_WIDTH_8BIT
+                        bool "8Bit"
+                endchoice
+
+                config SDIO0_BUS_WIDTH
+                    int
+                    default 1 if SDIO0_BUS_WIDTH_4BIT
+                    default 2 if SDIO0_BUS_WIDTH_8BIT
+            endif
+
+            config RT_USING_SDIO1
+                bool "Enable SDIO1"
+                default n
+        endif
+
+    menuconfig RT_USING_SPI
+        bool "Enable SPI Driver"
+        default n
+
+        if RT_USING_SPI
+            config RT_USING_SPI0
+                bool "Enable SPI0"
+                default n
+            config RT_SPI0_RXSD
+                int "SPI0 ReadSample Delay"
+                default 0
+
+            config RT_USING_SPI1
+                bool "Enable SPI1"
+                default n
+            config RT_SPI1_RXSD
+                int "SPI1 ReadSample Delay"
+                default 0
+
+            config RT_USING_SPI2
+                bool "Enable SPI2"
+                default n
+            config RT_SPI2_RXSD
+                int "SPI2 ReadSample Delay"
+                default 0
+        endif
+
+    menuconfig DRV_SYSCTL_BOOT_FORCE_MODE
+        bool "Force Sysctl Boot Mode"
+        default n
+
+        if DRV_SYSCTL_BOOT_FORCE_MODE
+            choice
+                bool "Force Sysctl Boot From"
+                default DRV_SYSCTL_BOOT_FORCE_MODE_MODE_SDCARD
+
+                config DRV_SYSCTL_BOOT_FORCE_MODE_MODE_SPI_NOR
+                    bool "Spi Nor Flash"
+                config DRV_SYSCTL_BOOT_FORCE_MODE_MODE_SPI_NAND
+                    bool "Spi Nand Flash"
+                config DRV_SYSCTL_BOOT_FORCE_MODE_MODE_EMMC
+                    bool "Emmc (SDIO0)"
+                config DRV_SYSCTL_BOOT_FORCE_MODE_MODE_SDCARD
+                    bool "SdCard (SDIO1)"
+            endchoice
+
+            config DRV_SYSCTL_BOOT_FORCE_MODE_MODE
+                int
+                default 0 if DRV_SYSCTL_BOOT_FORCE_MODE_MODE_SPI_NOR
+                default 1 if DRV_SYSCTL_BOOT_FORCE_MODE_MODE_SPI_NAND
+                default 2 if DRV_SYSCTL_BOOT_FORCE_MODE_MODE_EMMC
+                default 3 if DRV_SYSCTL_BOOT_FORCE_MODE_MODE_SDCARD
+        endif
+
+    menuconfig RT_USING_TS
+        bool "Enable Tsensor driver"
+        default n
+
+        if RT_USING_TS
+            config DRV_TS_USE_RT_DEVICE
+                bool "Tsensor driver use RT Device framework"
+                default n
+        endif
+
+    menuconfig RT_USING_SERIAL
+        bool "USING Serial device drivers"
+        default n
+
+        if RT_USING_SERIAL
+            config RT_SERIAL_ENABLE_UART0
+                bool "Enable Uart device 0"
+                default y
+            config RT_SERIAL_ENABLE_UART1
+                bool "Enable Uart device 1"
+                default y
+            config RT_SERIAL_ENABLE_UART2
+                bool "Enable Uart device 2"
+                default y
+            config RT_SERIAL_ENABLE_UART3
+                bool "Enable Uart device 3"
+                default y
+            config RT_SERIAL_ENABLE_UART4
+                bool "Enable Uart device 4"
+                default y
+
+            config RT_SERIAL_RECV_BUF_SIZE
+                hex "Uart Device Recv Buffer Size"
+                default 0x4000
+        endif
+
+    config RT_USING_WDT
+        bool "Using Watch Dog device drivers"
+        default n
+
+    config RT_USING_GZIP_DECOMP
+        bool "Using HW gzip decompress driver"
+        default n
+
+endmenu

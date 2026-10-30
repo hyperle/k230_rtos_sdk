@@ -1,0 +1,68 @@
+if TARGET_K230_EVB
+
+    config SYS_CPU
+        default "k230"
+
+    config SYS_VENDOR
+        default "kendryte"
+
+    config SYS_BOARD
+        default "k230_evb"
+
+    config SYS_CONFIG_NAME
+        default "k230_common"
+
+    config BOARD_SPECIFIC_OPTIONS
+        def_bool y
+        select KENDRYTE_K230
+
+    choice
+        prompt "DDR Type And Frequency"
+        default EVB_LPDDR3_2133
+
+        config EVB_LPDDR3_800
+            bool "k230 evb lpddr3 800"
+
+        config EVB_LPDDR3_1600
+            bool "k230 evb lpddr3 1600"
+
+        config EVB_LPDDR3_2133
+            bool "k230 evb lpddr3 2133"
+
+        config EVB_LPDDR4_1066
+            bool "k230 evb lpddr4 1066"
+
+        config EVB_LPDDR4_1066_WITHOUT_ODT
+            bool "k230 evb lpddr4 1066 without odt"
+
+        config EVB_LPDDR4_2667
+            bool "k230 evb lpddr4 2667"
+
+        config EVB_LPDDR4_3200
+            bool "k230 evb lpddr4 3200"
+
+        config EVB_K230D_SIP_LPDDR4_2667
+            bool "k230d evb lpddr4(sip) 2667"
+
+        config EVB_V2_LPDDR4_2667
+            bool "k230 evb lpddr4 V2 2667"
+            help
+                "same as 01 ,lckfb"
+
+        config EVB_V2_LPDDR4_3200
+            bool "k230 evb lpddr4 V2 3200"
+            help
+                "same as 01 ,lckfb"
+
+        config EVB_V2_LPDDR4_1066_WITHOUT_ODT
+            bool "k230 evb lpddr4 V2 1066 without odt"
+            help
+                "same as 01 ,lckfb"
+
+        config EVB_V2_LPDDR4_1066
+            bool "k230 evb lpddr4 V2 1066 have odt"
+            help
+                "same as 01 ,lckfb"
+    endchoice
+
+endif

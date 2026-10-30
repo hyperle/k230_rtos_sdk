@@ -1,3 +1,16 @@
+# Dart V1 Firmware Repository
+
+This fork tracks component sources directly in the root Git repository.
+
+| Branch | Firmware configuration |
+| --- | --- |
+| `dart_control_board` | `k230d_rtos_dart_v1_defconfig` — RT-Smart, CanMV disabled |
+| `micropython` | `k230d_canmv_dart_v1_defconfig` — CanMV / MicroPython |
+
+Clone the required branch, then build with its matching defconfig. Source changes
+under `src/` are committed and pushed from the root. See [BUILD.md](BUILD.md) and
+the [Dart V1 board guide](boards/k230d_rtos_dart_v1/README.md).
+
 # K230 RTOS Only SDK 开发指南
 
 ## 概述

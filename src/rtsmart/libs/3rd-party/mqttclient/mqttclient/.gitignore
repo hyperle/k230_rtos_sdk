@@ -1,0 +1,10 @@
+.vscode/
+build/
+libmqttclient/
+mqtt-client/
+*.deb
+*.bak
+*.zip
+*.tar
+*.db
+~/

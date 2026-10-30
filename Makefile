@@ -49,9 +49,6 @@ prepare: .autoconf rm_image
 
 
 %_defconfig: $(KCONF)
-	@if [ "$@" = "k230d_canmv_dart_v1_defconfig" ]; then \
-		$(PYTHON) $(SDK_TOOLS_DIR)/prepare_dart_micropython.py || exit $$?; \
-	fi
 	$(call del_mark)
 
 	$(call gen_kconfig,$(SDK_CANMV_SRC_DIR),canmv)

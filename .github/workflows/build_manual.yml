@@ -19,29 +19,10 @@ jobs:
         shell: bash
 
     steps:
-      - name: Setup SSH
-        run: |
-          # configure git
-          git config --global user.name kendryte747
-          git config --global user.email kendryte747@gmail.com
-          # update ssh key
-          mkdir -p ~/.ssh
-          echo "${{ secrets.ACTIONS_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-      - name: Install repo
-        run: |
-          # install repo
-          mkdir -p ~/.bin/
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
-          chmod +x ~/.bin/repo
-
-      - name: Prepare code
-        run: |
-          rm -rf *
-          ls -alh
-          ~/.bin/repo init -u git@github.com:canmv-k230/manifest.git
-          ~/.bin/repo sync
+      - name: Check out firmware sources
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Prepare Environment
         run: |
