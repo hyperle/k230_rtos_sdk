@@ -1,0 +1,130 @@
+menu "RT-Smart 3rd-party Configuration"
+
+    config RTSMART_3RD_PARTY_ENABLE_NIMBLE
+        bool "Enable Build NimBLE host stack"
+        default n
+        select RTSMART_3RD_PARTY_ENABLE_MBEDTLS
+        help
+            Build the NimBLE GAP, GATT, L2CAP, and SMP host stack for
+            RT-Smart user-space applications. A Bluetooth H:4 controller
+            device such as /dev/hci0 is required at runtime.
+
+    config RTSMART_3RD_PARTY_ENABLE_FREETYPE
+        bool "Enable Build FreeType"
+        default y
+
+    menuconfig RTSMART_3RD_PARTY_ENABLE_LVGL
+        bool "Enable Build LVGL"
+        default y
+        depends on !SDK_ENABLE_CANMV
+
+        if RTSMART_3RD_PARTY_ENABLE_LVGL
+            choice
+                bool "Lvgl Color Depth"
+                default RTSMART_3RD_PARTY_LVGL_COLOR_DEPTH_32
+
+                config RTSMART_3RD_PARTY_LVGL_COLOR_DEPTH_8
+                    bool "8 (L8)"
+                config RTSMART_3RD_PARTY_LVGL_COLOR_DEPTH_16
+                    bool "16 (RGB565)"
+                config RTSMART_3RD_PARTY_LVGL_COLOR_DEPTH_24
+                    bool "24 (RGB888)"
+                config RTSMART_3RD_PARTY_LVGL_COLOR_DEPTH_32
+                    bool "32 (ARGB8888)"
+            endchoice
+
+            config RTSMART_3RD_PARTY_LVGL_COLOR_DEPTH
+            int
+            default 1 if RTSMART_3RD_PARTY_LVGL_COLOR_DEPTH_1
+            default 8 if RTSMART_3RD_PARTY_LVGL_COLOR_DEPTH_8
+            default 16 if RTSMART_3RD_PARTY_LVGL_COLOR_DEPTH_16
+            default 24 if RTSMART_3RD_PARTY_LVGL_COLOR_DEPTH_24
+            default 32 if RTSMART_3RD_PARTY_LVGL_COLOR_DEPTH_32
+
+            config RTSMART_3RD_PARTY_LVGL_USE_VGLITE
+                bool "Enable LVGL VG-Lite renderer"
+                default y
+                select RTSMART_HAL_ENABLE_VG_LITE
+                help
+                    Use LVGL's complete VG-Lite draw backend for supported fill,
+                    border, shadow, text, image, arc, line, layer, triangle and
+                    mask tasks. The software renderer remains as fallback.
+
+            config RTSMART_3RD_PARTY_LVGL_VGLITE_TESS_WIDTH
+                int "LVGL VG-Lite tessellation width"
+                default 1920
+                depends on RTSMART_3RD_PARTY_LVGL_USE_VGLITE
+
+            config RTSMART_3RD_PARTY_LVGL_VGLITE_TESS_HEIGHT
+                int "LVGL VG-Lite tessellation height"
+                default 1080
+                depends on RTSMART_3RD_PARTY_LVGL_USE_VGLITE
+
+            config RTSMART_3RD_PARTY_ENABLE_LVGL_EXAMPLES
+                bool "Enable LVGL Examples"
+                default n
+        endif
+
+    config RTSMART_3RD_PARTY_ENABLE_MBEDTLS
+        bool "Enable Build MbedTLS"
+        default y
+
+    menuconfig RTSMART_3RD_PARTY_ENABLE_MQTTCLIENT
+        bool "Enable Build MQTTClient"
+        default y
+
+        if RTSMART_3RD_PARTY_ENABLE_MQTTCLIENT
+            source "$(SDK_RTSMART_SRC_DIR)/libs/3rd-party/mqttclient/Kconfig"
+        endif
+
+    menuconfig RTSMART_3RD_PARTY_ENABLE_MINIHTTP
+        bool "Enable Build miniHTTP"
+        default n
+
+        if RTSMART_3RD_PARTY_ENABLE_MINIHTTP
+            config MINIHTTP_USE_MBEDTLS
+                bool "Enable miniHTTP MbedTLS Support"
+                default y if RTSMART_3RD_PARTY_ENABLE_MBEDTLS
+
+            config MINIHTTP_USE_DEBUG
+                bool "Enable miniHTTP Debug Output"
+                default n
+        endif
+
+    menuconfig RTSMART_3RD_PARTY_ENABLE_TUYALINKSDK
+        bool "Enable Build Tuya IoT Core SDK"
+        default n
+        select RTSMART_3RD_PARTY_ENABLE_MBEDTLS
+
+        if RTSMART_3RD_PARTY_ENABLE_TUYALINKSDK
+            
+        endif
+
+    menuconfig RTSMART_3RD_PARTY_ENABLE_CJSON
+        bool "Enable Build cJSON"
+        default n
+
+        if RTSMART_3RD_PARTY_ENABLE_CJSON
+
+        endif
+
+    menuconfig RTSMART_3RD_PARTY_ENABLE_LIBPEER
+        bool "Enable Build libpeer (WebRTC)"
+        default n
+        select RTSMART_3RD_PARTY_ENABLE_CJSON
+        select RTSMART_3RD_PARTY_ENABLE_MBEDTLS
+
+        if RTSMART_3RD_PARTY_ENABLE_LIBPEER
+
+        endif
+
+    menuconfig RTSMART_3RD_PARTY_ENABLE_LIBWEBSOCKETS
+        bool "Enable Build libwebsockets"
+        default n
+        select RTSMART_3RD_PARTY_ENABLE_MBEDTLS
+
+        if RTSMART_3RD_PARTY_ENABLE_LIBWEBSOCKETS
+            source "$(SDK_RTSMART_SRC_DIR)/libs/3rd-party/libwebsockets/Kconfig"
+        endif
+
+endmenu

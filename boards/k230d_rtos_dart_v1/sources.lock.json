@@ -1,0 +1,86 @@
+{
+  "sdk_base": "11ef1a0f02a0d2ccbc4bafceb0e335dfe11923c2",
+  "projects": [
+    {
+      "path": "src/uboot/uboot",
+      "url": "https://github.com/canmv-k230/u-boot",
+      "revision": "56a131d12108009012eca0204e7dd610a3e7d618"
+    },
+    {
+      "path": "src/opensbi/opensbi",
+      "url": "https://github.com/canmv-k230/opensbi",
+      "revision": "ea1ceab9f0af65251e4a5c7d943a1cfa5e9002d6"
+    },
+    {
+      "path": "src/rtsmart/rtsmart",
+      "url": "https://github.com/canmv-k230/rtsmart",
+      "revision": "56852a6adb08305fdc3a576fb763e4d878b03d97"
+    },
+    {
+      "path": "src/rtsmart/libs",
+      "url": "https://github.com/canmv-k230/k230_rtsmart_lib",
+      "revision": "4964b24f020825216a3095ba7ba998ae6e76bce7"
+    },
+    {
+      "path": "src/rtsmart/libs/kmodel",
+      "url": "https://github.com/canmv-k230/nncase_kmodels_v2_11",
+      "revision": "830f035e8907b89015e15c4a85cf7f59e06c4175"
+    },
+    {
+      "path": "src/rtsmart/examples",
+      "url": "https://github.com/canmv-k230/k230_rtsmart_examples",
+      "revision": "0eccd20d2d26b237171a6c7b6a3479b7640f4dc6"
+    },
+    {
+      "path": "src/rtsmart/mpp",
+      "url": "https://github.com/canmv-k230/mpp",
+      "revision": "2b7e6a99a77e08434ddfde1c73604250a7948160"
+    },
+    {
+      "path": "src/rtsmart/rtsmart/kernel/bsp/maix3/drivers/extdrv/aic8800/firmware",
+      "url": "https://github.com/canmv-k230/aic8800_fw",
+      "revision": "e5bcfd0332d7551cf659b1ae9b50c8648870928b"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/freetype/freetype",
+      "url": "https://github.com/freetype/freetype",
+      "revision": "1452355de99d22b0cba6ccc17bf5cdf3682ef61e"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/mbedtls/mbedtls",
+      "url": "https://github.com/canmv-k230/mbedtls",
+      "revision": "a3ff9bce6b1c554a91bb3ced0f83046442a1694c"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/mqttclient/mqttclient",
+      "url": "https://github.com/jiejieTop/mqttclient",
+      "revision": "956e0c8dcac02d4b107ccb49f1990c7718b6b585"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/lvgl/lvgl",
+      "url": "https://github.com/lvgl/lvgl",
+      "revision": "c210a4efa2f474d0223d3e91c79963e1ae4ac0bc"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/cjson/cJSON",
+      "url": "https://github.com/DaveGamble/cJSON",
+      "revision": "fb16e5cf358798aabb049655975cde8427101056"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/libwebsockets/libwebsockets",
+      "url": "https://github.com/warmcat/libwebsockets",
+      "revision": "ff5a3aa702d8864caa23931fc508df099cc3e816"
+    },
+    {
+      "path": "src/rtsmart/libs/3rd-party/nimble/nimble",
+      "url": "https://github.com/apache/mynewt-nimble",
+      "revision": "70da7f3a05c3ded36c08c56e481fb400c5c29bac"
+    },
+    {
+      "path": "src/rtsmart/examples/3rd-party/iperf/iperf",
+      "url": "https://github.com/esnet/iperf",
+      "revision": "c9b74229d0d9bfec6d2307b66b43c29a7665ad0b"
+    }
+  ],
+  "source_layout": "monorepo"
+}

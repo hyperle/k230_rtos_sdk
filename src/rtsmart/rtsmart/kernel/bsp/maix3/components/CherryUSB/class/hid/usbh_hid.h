@@ -1,0 +1,42 @@
+/*
+ * Copyright (c) 2022, sakumisu
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#ifndef USBH_HID_H
+#define USBH_HID_H
+
+#include <stdint.h>
+
+#include "usbh_core.h"
+#include "usb_hid.h"
+
+struct usbh_hid {
+    struct usbh_hubport *hport;
+    struct usb_endpoint_descriptor *intin;  /* INTR IN endpoint */
+    struct usb_endpoint_descriptor *intout; /* INTR OUT endpoint */
+    struct usbh_urb intin_urb;              /* INTR IN urb */
+    struct usbh_urb intout_urb;             /* INTR OUT urb */
+
+    uint8_t report_desc[128];
+    uint16_t report_desc_len;
+    uint8_t intf; /* interface number */
+    uint8_t minor;
+};
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int usbh_hid_set_idle(struct usbh_hid *hid_class, uint8_t report_id, uint8_t duration);
+int usbh_hid_get_idle(struct usbh_hid *hid_class, uint8_t *buffer);
+int usbh_hid_set_protocol(struct usbh_hid *hid_class, uint8_t protocol);
+
+void usbh_hid_run(struct usbh_hid *hid_class);
+void usbh_hid_stop(struct usbh_hid *hid_class);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* USBH_HID_H */

@@ -1,0 +1,35 @@
+menuconfig RT_USING_REALTEK
+    bool "Realtek SDIO Wi-Fi"
+    depends on RT_USING_WIFI && RT_USING_SDIO
+    default n
+    help
+        Enable a Realtek SDIO Wi-Fi driver. It may be built together with
+        other SDIO Wi-Fi drivers; the SDIO manufacturer and product IDs
+        select the driver at runtime.
+
+    if RT_USING_REALTEK
+        choice
+            prompt "Realtek module"
+            default REALTEK_SDIO_RTL8189FTV
+
+            config REALTEK_SDIO_RTL8189FTV
+                bool "rtl8189"
+
+            config REALTEK_SDIO_RTL8733BS
+                bool "rtl8733BS"
+
+        endchoice
+
+        config REALTEK_INTERACTIVE_CMD
+            bool "RealTek Interactive CMDs"
+            default n
+            select REALTEK_ENABLE_DEBUG
+
+        config REALTEK_ENABLE_DEBUG
+            bool "RealTek Enable Debug"
+            default n
+
+        config REALTEK_ENABLE_ADAPTIVITY
+            bool "RealTek Enable Adaptivity"
+            default n
+    endif

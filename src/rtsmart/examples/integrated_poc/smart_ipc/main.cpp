@@ -1,0 +1,266 @@
+#include <iostream>
+#include <atomic>
+#include <chrono>
+#include <unistd.h>
+#include <signal.h>
+#include <thread>
+#include "smart_ipc.h"
+#include "scoped_timing.hpp"
+
+using namespace std::chrono_literals;
+
+std::atomic<bool> g_exit_flag{false};
+
+static void sigHandler(int sig_no) {
+    g_exit_flag.store(true);
+    printf("exit_flag true\n");
+}
+
+static void Usage() {
+    std::cout << "Usage: ./smart_ipc.elf [-H] [-S <sensor type>] [-V <enable_audio_capture>] [-a <audio_sample>] [-c <channel_count>] [-t <codec_type>] [-w <width>] [-h <height>] [-b <bitrate_kbps>] [-C <connector_type>] [-A <ai_input_width>] [-I <ai_input_height>] [-K <kmodel_file>] [-T <obj_thresh>] [-N <nms_thresh>] [-E <enable_video_output>] [-F <enable_ai_analysis>] [-G <enable_video_encoding>] [-D <data_source>] [-M <streaming_mode>] [-P <port>]" << std::endl;
+    std::cout << "-H: display this help message" << std::endl;
+    std::cout << "-S: the sensor type, default auto-detect" << std::endl;
+    std::cout << "-V: enable audio capture, default 1" << std::endl;
+    std::cout << "-a: the audio sample rate, default 8000" << std::endl;
+    std::cout << "-c: the audio channel count, default 1" << std::endl;
+    std::cout << "-t: the video encoder type: h264/h265, default h264" << std::endl;
+    std::cout << "-w: the video encoder width, default 1280" << std::endl;
+    std::cout << "-h: the video encoder height, default 720" << std::endl;
+    std::cout << "-b: the video encoder bitrate(kbps), default 2000" << std::endl;
+    std::cout << "-D: the encoding data source(0:Sensor Channel(default),1:vo wbc)" << std::endl;
+    std::cout << "-C: the video output connector type(0:HDMI,1:LCD), default HDMI" << std::endl;
+    std::cout << "-A: the AI analysis input width, default 1280" << std::endl;
+    std::cout << "-I: the AI analysis input height, default 720" << std::endl;
+    std::cout << "-K: the kmodel file path,default face_detection_320.kmodel" << std::endl;
+    std::cout << "-T: the face detection threshold,default 0.6" << std::endl;
+    std::cout << "-N: the face detection NMS threshold,default 0.4" << std::endl;
+    std::cout << "-E: enable video output, default 1" << std::endl;
+    std::cout << "-F: enable AI analysis, default 1" << std::endl;
+    std::cout << "-G: enable video encoding, default 1" << std::endl;
+    std::cout << "-M: streaming mode (0:RTSP(default), 1:WebRTC)" << std::endl;
+    std::cout << "-P: port (RTSP default 8554, WebRTC default 8080)" << std::endl;
+    exit(-1);
+}
+
+int parse_config(int argc, char *argv[], KdMediaInputConfig &config, StreamingMode &mode, int &port) {
+    int result;
+    opterr = 0;
+    while ((result = getopt(argc, argv, "Ha:c:t:w:h:b:C:A:I:K:T:N:E:F:G:S:V:D:M:P:")) != -1) {
+        switch(result) {
+        case 'H' : {
+            Usage(); break;
+        }
+        case 'a': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.audio_samplerate = n;
+            break;
+        }
+        case 'c': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.audio_channel_cnt = n;
+            break;
+        }
+        case 't': {
+            std::string s = optarg;
+            if (s == "h264") config.video_type = KdMediaVideoType::kVideoTypeH264;
+            else if (s == "h265") config.video_type = KdMediaVideoType::kVideoTypeH265;
+            else Usage();
+            break;
+        }
+        case 'w': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.venc_width = n;
+            break;
+        }
+        case 'h': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.venc_height = n;
+            break;
+        }
+        case 'b': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.bitrate_kbps = n;
+            break;
+        }
+        case 'D': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.venc_data_source_type = (VencDataSourceType)n;
+            break;
+        }
+        case 'C': {
+            int n = atoi(optarg);
+            if (n == 0) {
+                config.vo_connect_type = LT9611_MIPI_4LAN_1920X1080_30FPS;
+                config.osd_width = 1920;
+                config.osd_height = 1080;
+                config.vo_width = 1920;
+                config.vo_height = 1080;
+            } else if (n == 1) {
+                config.vo_connect_type = ST7701_V1_MIPI_2LAN_480X800_30FPS;
+                config.osd_width = 800;
+                config.osd_height = 480;
+                config.vo_width = 800;
+                config.vo_height = 480;
+            } else if(0x02 == n) {
+                config.vo_connect_type = HX8377_V2_MIPI_4LAN_1080X1920_30FPS;
+                config.osd_width = 1920;
+                config.osd_height = 1080;
+                config.vo_width = 1920;
+                config.vo_height = 1080;
+            } else {
+                Usage();
+            }
+            break;
+        }
+        case 'A': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.ai_width = n;
+            break;
+        }
+        case 'I': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.ai_height = n;
+            break;
+        }
+        case 'K': {
+            config.kmodel_file = optarg;
+            break;
+        }
+        case 'T': {
+            float n = atof(optarg);
+            if (n < 0) Usage();
+            config.obj_thresh = n;
+            break;
+        }
+        case 'N': {
+            float n = atof(optarg);
+            if (n < 0) Usage();
+            config.nms_thresh = n;
+            break;
+        }
+        case 'E': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.enable_video_output = n;
+            break;
+        }
+        case 'F': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.enable_ai_analysis = n;
+            break;
+        }
+        case 'G': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.enable_video_encoding = n;
+            break;
+        }
+        case 'S': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.sensor_type = (k_vicap_sensor_type)n;
+            break;
+        }
+        case 'V': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            config.enable_capture_audio = n;
+            break;
+        }
+        case 'M': {
+            int n = atoi(optarg);
+            if (n == 0) mode = StreamingMode::kRtsp;
+            else if (n == 1) mode = StreamingMode::kWebRtc;
+            else Usage();
+            break;
+        }
+        case 'P': {
+            int n = atoi(optarg);
+            if (n < 0) Usage();
+            port = n;
+            break;
+        }
+
+        default: Usage(); break;
+        }
+    }
+
+    printf("Config parameters:\n");
+    if (config.sensor_type == SENSOR_TYPE_MAX) {
+        printf("Sensor type: auto-detect\n");
+    } else {
+        printf("Sensor type: %d\n", config.sensor_type);
+    }
+    printf("Audio capture enabled: %d\n", config.enable_capture_audio);
+    printf("Audio sample rate: %d\n", config.audio_samplerate);
+    printf("Audio channel count: %d\n", config.audio_channel_cnt);
+    printf("Video encoder type: %s\n", (config.video_type == KdMediaVideoType::kVideoTypeH264) ? "h264" : "h265");
+    printf("Video encoder width: %d\n", config.venc_width);
+    printf("Video encoder height: %d\n", config.venc_height);
+    printf("Video encoder bitrate (kbps): %d\n", config.bitrate_kbps);
+    printf("Video output connector type: %s\n", (config.vo_connect_type == LT9611_MIPI_4LAN_1920X1080_30FPS) ? "HDMI" : "LCD");
+    printf("OSD width: %d\n", config.osd_width);
+    printf("OSD height: %d\n", config.osd_height);
+    printf("Video output width: %d\n", config.vo_width);
+    printf("Video output height: %d\n", config.vo_height);
+    printf("AI input width: %d\n", config.ai_width);
+    printf("AI input height: %d\n", config.ai_height);
+    printf("Kmodel file: %s\n", config.kmodel_file.c_str());
+    printf("Face detection threshold: %f\n", config.obj_thresh);
+    printf("Face detection NMS threshold: %f\n", config.nms_thresh);
+    printf("Enable video output: %d\n", config.enable_video_output);
+    printf("Enable AI analysis: %d\n", config.enable_ai_analysis);
+    printf("Enable video encoding: %d\n", config.enable_video_encoding);
+    printf("Video encoder data source: %s\n", (config.venc_data_source_type == DATA_SOURCE_SENSOR_CHANNEL) ? "Sensor Channel" : "VO WBC");
+    printf("Streaming mode: %s\n", (mode == StreamingMode::kRtsp) ? "RTSP" : "WebRTC");
+    printf("Port: %d\n", port);
+    printf("\n");
+    return 0;
+}
+
+int main(int argc, char *argv[]) {
+    ScopedTiming * st = new ScopedTiming("total test", 1);
+    signal(SIGINT, sigHandler);
+    signal(SIGPIPE, SIG_IGN);
+    g_exit_flag.store(false);
+
+    KdMediaInputConfig config;
+    StreamingMode mode = StreamingMode::kRtsp;
+    int port = 8554;
+    parse_config(argc, argv, config, mode, port);
+
+    /* Auto-select default port based on mode if user didn't specify */
+    if (mode == StreamingMode::kWebRtc && port == 8554) {
+        port = 8080;  /* WebRTC default is 8080 */
+    }
+
+    MySmartIPC *smartIPC = new MySmartIPC();
+    if (!smartIPC || smartIPC->Init(config, "test", mode, port) < 0) {
+        std::cout << "SmartIPC Init failed." << std::endl;
+        smartIPC->DeInit();
+        return -1;
+    }
+
+    smartIPC->Start();
+    printf("SmartIPC started (%s mode, port %d).\n",
+           (mode == StreamingMode::kRtsp) ? "RTSP" : "WebRTC", port);
+    delete st;
+
+    while (!g_exit_flag) {
+        std::this_thread::sleep_for(100ms);
+    }
+
+    smartIPC->Stop();
+    smartIPC->DeInit();
+    delete smartIPC;
+    return 0;
+}

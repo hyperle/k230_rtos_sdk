@@ -1,0 +1,746 @@
+#include <fcntl.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "rtconfig.h"
+
+#include <rtdef.h>
+#include <rthw.h>
+#include <rtthread.h>
+
+#include <dfs.h>
+#include <dfs_fs.h>
+#include <dfs_posix.h>
+
+#include "sysctl_boot.h"
+
+#include "./config.h"
+
+struct config_handler {
+  uint32_t command; // const char *command;
+  int (*handler)(char *value);
+};
+
+/* 0: success, -1: failed */
+/* if successed, user should close(fd), and rt_free(buffer) to release resources
+ */
+static int read_config_file(int *fd, char **buffer, size_t *buffer_size,
+                            int open_flags) {
+  int _fd = 0;
+  off_t file_size = 0;
+  size_t _buffer_size = 0;
+  char *_buffer = NULL;
+
+  _fd = open(RT_SMART_CONFIG_FILE_PATH, open_flags);
+  if (0 > _fd) {
+    goto _failed;
+  }
+
+  file_size = lseek(_fd, 0, SEEK_END);
+  if (0 >= file_size || 0 > lseek(_fd, 0, SEEK_SET)) {
+    close(_fd);
+    goto _failed;
+  }
+
+  _buffer_size = (size_t)file_size;
+
+  if (SIZE_MAX == _buffer_size) {
+    close(_fd);
+    goto _failed;
+  }
+
+  if (NULL == (_buffer = rt_malloc(_buffer_size + 1))) {
+    close(_fd);
+    goto _failed;
+  }
+
+  if (_buffer_size != read(_fd, _buffer, _buffer_size)) {
+    rt_kprintf("read config.txt failed\n");
+    close(_fd);
+    rt_free(_buffer);
+    goto _failed;
+  }
+
+  _buffer[_buffer_size] = '\0';
+
+  *fd = _fd;
+  *buffer = _buffer;
+  *buffer_size = _buffer_size;
+
+  return 0;
+
+_failed:
+  *fd = -1;
+  *buffer = NULL;
+  *buffer_size = 0;
+  return -1;
+}
+
+uint32_t gpt_crc32_next(const void *data, size_t len, uint32_t last_crc)
+{
+    uint32_t crc = ~last_crc;
+    const unsigned char *p = (const unsigned char *)data;
+
+    for (size_t i = 0; i < len; ++i) {
+        crc ^= (uint32_t)p[i]; // XOR the byte with the CRC
+
+        for (int j = 0; j < 8; ++j) { // Process each bit
+            if (crc & 1) {
+                crc = (crc >> 1) ^ 0xEDB88320; // Polynomial for CRC-32
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+
+    return ~crc; // Final CRC value
+}
+
+uint32_t gpt_crc32(const void *data, size_t len)
+{
+	return gpt_crc32_next(data, len, 0);
+}
+
+#if defined(CONFIG_RT_AUTO_RESIZE_PARTITION) && defined(RT_USING_SDIO)
+#ifndef CONFIG_RT_AUTO_RESIZE_PARTITION_ALIGN_SIZE
+#define CONFIG_RT_AUTO_RESIZE_PARTITION_ALIGN_SIZE 0x40000000ULL
+#endif
+
+#define AUTO_RESIZE_ALIGN_SIZE_BYTES \
+  ((uint64_t)CONFIG_RT_AUTO_RESIZE_PARTITION_ALIGN_SIZE)
+
+static int get_block_geometry(rt_device_t dev_sd,
+                              struct rt_device_blk_geometry *geometry) {
+  rt_memset(geometry, 0, sizeof(*geometry));
+  if ((RT_EOK !=
+       rt_device_control(dev_sd, RT_DEVICE_CTRL_BLK_GETGEOME, geometry)) ||
+      (0 == geometry->bytes_per_sector) ||
+      (0 == geometry->sector_count)) {
+    return -1;
+  }
+
+  return 0;
+}
+
+static uint64_t div_round_up_u64(uint64_t value, uint64_t divisor) {
+  if (0 == divisor) {
+    return 0;
+  }
+
+  return (value + divisor - 1) / divisor;
+}
+
+static uint64_t align_up_u64(uint64_t value, uint64_t alignment) {
+  if (alignment <= 1) {
+    return value;
+  }
+
+  return div_round_up_u64(value, alignment) * alignment;
+}
+
+static uint64_t get_aligned_start_lba(uint64_t next_free_lba,
+                                      uint32_t sector_size) {
+  uint64_t align_sectors = 0;
+
+  if ((0 == AUTO_RESIZE_ALIGN_SIZE_BYTES) || (0 == sector_size)) {
+    return next_free_lba;
+  }
+
+  align_sectors = div_round_up_u64(AUTO_RESIZE_ALIGN_SIZE_BYTES, sector_size);
+  return align_up_u64(next_free_lba, align_sectors);
+}
+
+static bool is_power_of_two_u32(uint32_t value) {
+  return (0 != value) && (0 == (value & (value - 1)));
+}
+
+// MBR ////////////////////////////////////////////////////////////////////////
+#define DPT_ADDRESS 0x1be /* device partition offset in Boot Sector */
+#define DPT_ITEM_SIZE 16  /* partition item size */
+#define MBR_SIGNATURE_OFFSET 510
+#define MBR_SIGNATURE_0 0x55
+#define MBR_SIGNATURE_1 0xaa
+#define GPT_PROTECTIVE_PARTITION_TYPE 0xee
+
+struct partition_entry {
+  u_int8_t active;
+  u_int8_t start_head;
+  u_int16_t start_cylsec;
+  u_int8_t type;
+  u_int8_t end_head;
+  u_int16_t end_cylsec;
+  u_int32_t lba_sector;
+  u_int32_t lba_len;
+};
+
+static bool is_gpt_protective_mbr(const uint8_t *buffer) {
+  for (uint32_t i = 0; i < 4; i++) {
+    if (GPT_PROTECTIVE_PARTITION_TYPE ==
+        buffer[DPT_ADDRESS + i * DPT_ITEM_SIZE + 4]) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+#define CONFIG_RT_AUTO_RESIZE_PARTITION_NR (CONFIG_RT_PARTITION_NUMBER - 1)
+
+_Static_assert(sizeof(struct partition_entry) == DPT_ITEM_SIZE,
+               "Error partition entry size error");
+
+_Static_assert(4 > CONFIG_RT_AUTO_RESIZE_PARTITION_NR,
+               "MBR max partition is 4");
+
+static int mmc_mbr_part_create_new(rt_device_t dev_sd,
+                                   const struct rt_device_blk_geometry *geometry,
+                                   uint32_t sector_size) {
+  uint8_t *buffer = NULL;
+  uint64_t sector_count = 0;
+  uint64_t total_sector_count = 0;
+  uint64_t start_lba = 0;
+  uint64_t partition_sector_count = 0;
+
+  struct dfs_partition part, prev_part;
+  struct partition_entry part_entry;
+
+  total_sector_count = geometry->sector_count;
+
+  if (0 == total_sector_count) {
+    rt_kprintf("%s invalid sector count.\n", __func__);
+    return -1;
+  }
+  sector_count = total_sector_count - 1;
+
+  if (NULL == (buffer = rt_malloc_align(sector_size, RT_CPU_CACHE_LINE_SZ))) {
+    rt_kprintf("%s malloc failed.\n", __func__);
+    return -1;
+  }
+
+  if (0x01 != rt_device_read(dev_sd, 0, buffer, 1)) {
+    rt_kprintf("%s read sector failed.\n", __func__);
+    goto _exit;
+  }
+
+  if ((MBR_SIGNATURE_0 != buffer[MBR_SIGNATURE_OFFSET]) ||
+      (MBR_SIGNATURE_1 != buffer[MBR_SIGNATURE_OFFSET + 1])) {
+    rt_kprintf("%s invalid MBR signature.\n", __func__);
+    goto _exit;
+  }
+
+  if (is_gpt_protective_mbr(buffer)) {
+    rt_kprintf("%s GPT partition table is not supported.\n", __func__);
+    goto _exit;
+  }
+
+  if (RT_EOK != dfs_filesystem_get_partition(
+                    &part, buffer, CONFIG_RT_AUTO_RESIZE_PARTITION_NR)) {
+    if (RT_EOK !=
+        dfs_filesystem_get_partition(&prev_part, buffer,
+                                     CONFIG_RT_AUTO_RESIZE_PARTITION_NR - 1)) {
+      rt_kprintf("%s get last partition info failed.\n", __func__);
+      goto _exit;
+    }
+
+    rt_memset(&part_entry, 0, sizeof(part_entry));
+
+    part_entry.active = 0x00; // not bootable
+    part_entry.start_head = 0xFE;
+    part_entry.start_cylsec = 0xFFFF;
+    part_entry.end_head = 0xFE;
+    part_entry.end_cylsec = 0xFFFF;
+    part_entry.type = 0x0C; // FAT32 (LBA)
+    start_lba = get_aligned_start_lba((uint64_t)prev_part.offset + prev_part.size,
+                                      sector_size);
+    if ((start_lba >= sector_count) || (UINT32_MAX < start_lba)) {
+      rt_kprintf("%s invalid aligned start lba.\n", __func__);
+      goto _exit;
+    }
+    part_entry.lba_sector = (uint32_t)start_lba;
+
+    partition_sector_count = sector_count - start_lba;
+    if (UINT32_MAX < partition_sector_count) {
+      rt_kprintf("%s partition is too large for MBR.\n", __func__);
+      goto _exit;
+    }
+    part_entry.lba_len = (uint32_t)partition_sector_count;
+
+    rt_memcpy(buffer + DPT_ADDRESS +
+                  CONFIG_RT_AUTO_RESIZE_PARTITION_NR * DPT_ITEM_SIZE,
+              &part_entry, sizeof(part_entry));
+
+    if (0x01 == rt_device_write(dev_sd, 0, buffer, 1)) {
+      rt_kprintf("Create new MBR partiton 0x%x - 0x%x\n",
+                 (unsigned long long)((uint64_t)part_entry.lba_sector *
+                                      sector_size),
+                 (unsigned long long)(((uint64_t)part_entry.lba_sector +
+                                       part_entry.lba_len) *
+                                      sector_size));
+
+      rt_free_align(buffer);
+
+      return 0;
+    } else {
+      rt_kprintf("!!!FATAL ERROR, Update MBR FAILED.\n");
+    }
+  } else {
+    rt_free_align(buffer);
+
+    return 1;
+  }
+
+_exit:
+  if (buffer) {
+    rt_free_align(buffer);
+  }
+
+  return -1;
+}
+
+// GPT ////////////////////////////////////////////////////////////////////////
+# define ENABLE_GPT_PART_RESIZE   0
+
+#if defined (ENABLE_GPT_PART_RESIZE) && ENABLE_GPT_PART_RESIZE
+
+#include <drivers/gpt.h>
+
+#define GPT_ENTRIES 		128
+#define GPT_SECTORS		(1 + GPT_ENTRIES * sizeof(gpt_entry) / 512)
+
+_Static_assert(sizeof(gpt_entry) == 128, "gpt_entry size error.");
+
+static bool is_empty_gpt_guid(const gpt_guid_t *guid) {
+  const gpt_guid_t empty_guid = NULL_GUID;
+
+  return 0 == rt_memcmp(guid, &empty_guid, sizeof(*guid));
+}
+
+static int block_device_uses_gpt(rt_device_t dev_sd, uint32_t sector_size) {
+  uint8_t *buffer = rt_malloc_align(sector_size, RT_CPU_CACHE_LINE_SZ);
+  int result = -1;
+
+  if (NULL == buffer) {
+    return -1;
+  }
+
+  if (1 == rt_device_read(dev_sd, 0, buffer, 1)) {
+    if ((MBR_SIGNATURE_0 == buffer[MBR_SIGNATURE_OFFSET]) &&
+        (MBR_SIGNATURE_1 == buffer[MBR_SIGNATURE_OFFSET + 1])) {
+      result = is_gpt_protective_mbr(buffer) ? 1 : 0;
+    }
+  }
+
+  rt_free_align(buffer);
+  return result;
+}
+
+static int mmc_gpt_part_create_new(rt_device_t dev_sd,
+                                   const struct rt_device_blk_geometry *geometry,
+                                   uint32_t sector_size) {
+  uint8_t *buffer = NULL;
+  uint64_t sector_count = 0;
+  uint64_t total_sector_count = 0;
+  uint64_t start_lba = 0;
+
+  const uint8_t uuid[] = {
+    0x9D, 0x85, 0x6F, 0x14, 0x47, 0xE6, 0xC0, 0x4C, 0xB7, 0x1B, 0xF4, 0x44, 0x72, 0xD2, 0x5F, 0x4D
+  };
+
+  gpt_header _gpt_header;
+  gpt_entry *_gpt_entry = NULL, *new_entry, *prev_entry;
+  size_t _gpt_entry_size = 0;
+  size_t _gpt_entry_sector_count = 0;
+  size_t _gpt_entry_buffer_size = 0;
+
+  total_sector_count = geometry->sector_count;
+
+  int label_offet = 0;
+
+  if (0 == total_sector_count) {
+    rt_kprintf("%s invalid sector count.\n", __func__);
+    return -1;
+  }
+  sector_count = total_sector_count - 1;
+
+  if (NULL == (buffer = rt_malloc_align(sector_size, RT_CPU_CACHE_LINE_SZ))) {
+    rt_kprintf("%s malloc failed 1.\n", __func__);
+    return -1;
+  }
+
+  // read gpt header
+  if (0x01 != rt_device_read(dev_sd, 1, buffer, 1)) {
+    rt_kprintf("%s read sector failed 1.\n", __func__);
+    goto _exit;
+  }
+  rt_memcpy(&_gpt_header, buffer, sizeof(gpt_header));
+
+  if ((GPT_HEADER_SIGNATURE != _gpt_header.signature) ||
+      (GPT_ENTRIES != _gpt_header.num_partition_entries) ||
+      (sizeof(gpt_entry) != _gpt_header.sizeof_partition_entry)) {
+    rt_kprintf("invalid gpt header.\n");
+    goto _exit;
+  }
+
+  _gpt_entry_size = _gpt_header.num_partition_entries * _gpt_header.sizeof_partition_entry;
+  _gpt_entry_sector_count = (size_t)div_round_up_u64(_gpt_entry_size, sector_size);
+  _gpt_entry_buffer_size = _gpt_entry_sector_count * sector_size;
+  if(NULL == (_gpt_entry = rt_malloc_align(_gpt_entry_buffer_size, RT_CPU_CACHE_LINE_SZ))) {
+    rt_kprintf("%s malloc failed 2.\n", __func__);
+    goto _exit;
+  }
+
+  if (_gpt_entry_sector_count != rt_device_read(dev_sd, _gpt_header.partition_entry_lba,
+                                                _gpt_entry, _gpt_entry_sector_count)) {
+    rt_kprintf("%s read sector failed 2.\n", __func__);
+    goto _exit;
+  }
+
+  prev_entry = &_gpt_entry[CONFIG_RT_AUTO_RESIZE_PARTITION_NR - 1];
+  new_entry = &_gpt_entry[CONFIG_RT_AUTO_RESIZE_PARTITION_NR];
+  if (!is_empty_gpt_guid(&new_entry->partition_type_guid)) {
+    rt_free_align(buffer);
+    rt_free_align(_gpt_entry);
+    return 1;
+  }
+  if (is_empty_gpt_guid(&prev_entry->partition_type_guid) ||
+      (prev_entry->ending_lba < prev_entry->starting_lba)) {
+    rt_kprintf("%s get last partition info failed.\n", __func__);
+    goto _exit;
+  }
+
+  // create a new partition
+  new_entry->partition_type_guid = PARTITION_BASIC_DATA_GUID; // FAT32
+  memcpy(new_entry->unique_partition_guid.b, uuid, sizeof(uuid));
+
+  start_lba = get_aligned_start_lba((uint64_t)prev_entry->ending_lba + 1,
+                                    sector_size);
+  if (start_lba >= sector_count) {
+    rt_kprintf("%s invalid aligned start lba.\n", __func__);
+    goto _exit;
+  }
+  new_entry->starting_lba = start_lba;
+  new_entry->ending_lba = sector_count;
+
+  new_entry->attributes.required_to_function = 0;
+  new_entry->attributes.type_guid_specific = 0;
+
+  // label
+  label_offet = 0;
+  new_entry->partition_name[label_offet++] = 'd';
+  new_entry->partition_name[label_offet++] = 'a';
+  new_entry->partition_name[label_offet++] = 't';
+  new_entry->partition_name[label_offet++] = 'a';
+  new_entry->partition_name[label_offet++] = '\0';
+
+  // update gpt header
+  _gpt_header.last_usable_lba = sector_count;
+
+  _gpt_header.partition_entry_array_crc32 = gpt_crc32(_gpt_entry, _gpt_entry_size);
+
+  _gpt_header.header_crc32 = 0;
+  _gpt_header.header_crc32 = gpt_crc32(&_gpt_header, sizeof(gpt_header));
+
+  if (_gpt_entry_sector_count != rt_device_write(dev_sd, _gpt_header.partition_entry_lba,
+                                                 _gpt_entry, _gpt_entry_sector_count)) {
+    rt_kprintf("%s write sector failed 1.\n", __func__);
+    goto _exit;
+  }
+
+  rt_memcpy(buffer, &_gpt_header, sizeof(_gpt_header));
+  if (0x01 != rt_device_write(dev_sd, 1, buffer, 1)) {
+    rt_kprintf("%s write sector failed 2.\n", __func__);
+    goto _exit;
+  }
+
+  rt_kprintf("Create new GPT partiton 0x%x - 0x%x\n",
+             (unsigned long long)((uint64_t)new_entry->starting_lba *
+                                  sector_size),
+             (unsigned long long)((uint64_t)new_entry->ending_lba *
+                                  sector_size));
+
+  rt_free_align(buffer);
+  rt_free_align(_gpt_entry);
+
+  return 0;
+
+_exit:
+  if (buffer) {
+    rt_free_align(buffer);
+  }
+
+  if (_gpt_entry) {
+    rt_free_align(_gpt_entry);
+  }
+
+  return -1;
+}
+#endif
+
+static inline __attribute__((always_inline)) void disable_auto_resize(void) {
+  int fd = -1;
+  char *file_buffer = NULL;
+  size_t file_buffer_size = 0;
+
+  if ((0x00 == read_config_file(&fd, &file_buffer, &file_buffer_size,
+                                O_RDWR)) &&
+      (0 <= fd) && (NULL != file_buffer)) {
+    /* change auto_resize to n */
+    char *p_auto_resize = rt_strstr(file_buffer, "auto_resize=");
+    if (p_auto_resize) {
+      off_t offset_auto_resize =
+          p_auto_resize - file_buffer + sizeof("auto_resize=") - 1;
+      if ((0 > lseek(fd, offset_auto_resize, SEEK_SET)) ||
+          (1 != write(fd, "n", 1))) {
+        rt_kprintf("%s, update config file failed\n", __func__);
+      }
+      close(fd);
+
+    } else {
+      close(fd);
+    }
+
+    if (file_buffer) {
+      rt_free(file_buffer);
+    }
+  } else {
+    rt_kprintf("%s, read config file failed\n", __func__);
+  }
+}
+
+static int execute_auto_resize(char *value) {
+  int ret = -1;
+  int fd = -1;
+  char enable = 0;
+  uint32_t sector_size = SECTOR_SIZE;
+#if !defined(CONFIG_RT_AUTO_RESIZE_PARTITION_ALWAYS)
+  bool data_marker_created = false;
+#endif
+
+  char dev_name[16];
+  rt_device_t dev_sd = NULL;
+  struct rt_device_blk_geometry geometry;
+
+  int mmc_dev = -1;
+
+  sysctl_boot_mode_e boot_mode;
+  boot_mode = sysctl_boot_get_boot_mode();
+
+  if (0x01 != sscanf(value, "%c", &enable)) {
+    rt_kprintf("%s parse value failed.\n", __func__);
+    return -1;
+  }
+
+  if ('y' != enable) {
+    if(0 <= (fd = open("/bin/auto_mkfs_data", O_RDONLY))) {
+      close(fd);
+      unlink("/bin/auto_mkfs_data");
+
+      fd = -1;
+    }
+
+    return 0;
+  }
+
+  if(SYSCTL_BOOT_EMMC == boot_mode) {
+    mmc_dev = 0;
+  } else if(SYSCTL_BOOT_SDCARD == boot_mode) {
+    mmc_dev = 1;
+  } else {
+    return -1;
+  }
+
+  rt_snprintf(dev_name, sizeof(dev_name), "sd%d", mmc_dev);
+  if (NULL == (dev_sd = rt_device_find(dev_name))) {
+    rt_kprintf("%s find /dev/sd failed.\n", __func__);
+    goto _exit;
+  }
+
+  if (RT_EOK != (ret = rt_device_open(dev_sd, RT_DEVICE_OFLAG_RDWR))) {
+    rt_kprintf("%s open /dev/sd failed.\n", __func__);
+    goto _exit;
+  }
+
+  if (0 != get_block_geometry(dev_sd, &geometry)) {
+    rt_kprintf("%s get block geometry failed.\n", __func__);
+    ret = -1;
+    goto _exit;
+  }
+
+  sector_size = geometry.bytes_per_sector;
+  rt_kprintf("%s using sector size: %u\n", __func__, sector_size);
+  if ((SECTOR_SIZE != sector_size) || !is_power_of_two_u32(sector_size)) {
+    rt_kprintf("%s invalid sector size: %u\n", __func__, sector_size);
+    ret = -1;
+    goto _exit;
+  }
+
+#if defined (ENABLE_GPT_PART_RESIZE) && ENABLE_GPT_PART_RESIZE
+  ret = block_device_uses_gpt(dev_sd, sector_size);
+  if (0 == ret) {
+    /* MBR */
+    ret = mmc_mbr_part_create_new(dev_sd, &geometry, sector_size);
+  } else if (1 == ret) {
+    /* GPT */
+    ret = mmc_gpt_part_create_new(dev_sd, &geometry, sector_size);
+  } else {
+    rt_kprintf("%s read partition table failed.\n", __func__);
+  }
+#else
+    ret = mmc_mbr_part_create_new(dev_sd, &geometry, sector_size);
+#endif
+
+  if (0x00 == ret) {
+    rt_device_close(dev_sd);
+    dev_sd = NULL;
+
+    /* Persist the pending format across the reboot needed to rescan MBR. */
+    if (0 > (fd = open("/bin/auto_mkfs_data", O_CREAT | O_WRONLY))) {
+      rt_kprintf("%s, create /bin/auto_mkfs_data failed\n", __func__);
+    } else {
+      close(fd);
+#if !defined(CONFIG_RT_AUTO_RESIZE_PARTITION_ALWAYS)
+      data_marker_created = true;
+#endif
+    }
+
+#if !defined(CONFIG_RT_AUTO_RESIZE_PARTITION_ALWAYS)
+    if (!data_marker_created) {
+      rt_kprintf("%s, partition created but format marker was not saved\n",
+                 __func__);
+      ret = -1;
+      goto _exit;
+    }
+
+    disable_auto_resize();
+#endif
+
+    /* reboot */
+    rt_kprintf("reboot...\n");
+    rt_hw_cpu_reset();
+  } else if(0 > ret) {
+    rt_kprintf("Create new partition failed.\n");
+  }
+
+_exit:
+  if (dev_sd) {
+    rt_device_close(dev_sd);
+  }
+  return ret;
+}
+#else
+static int execute_auto_resize(char *value) {
+  rt_kprintf("not support reisze partition.\n");
+  return -1;
+}
+#endif
+
+static const struct config_handler hanlders[] = {
+    {
+        0x277A782F /* auto_resize */,
+        execute_auto_resize,
+    },
+};
+
+static inline __attribute__((always_inline)) void excete_line(
+    char *line, bool skip_auto_resize) {
+  uint32_t hash_command;
+
+  char *p_command = line;
+  char *p_value = NULL;
+
+  if (NULL == (p_value = rt_strstr(p_command, "="))) {
+    rt_kprintf("Invaild line '%s'\n", line);
+    return;
+  }
+  p_value[0] = '\0';
+  p_value++;
+
+  hash_command = shash(p_command);
+
+  for (size_t i = 0; i < sizeof(hanlders) / sizeof(hanlders[0]); i++) {
+    if (hash_command == hanlders[i].command) {
+      if (skip_auto_resize && (0x277A782F == hash_command)) {
+        break;
+      }
+      int handler_ret = hanlders[i].handler(p_value);
+      if (0 > handler_ret) {
+        rt_kprintf("config command failed (%d)\n", handler_ret);
+      }
+      break;
+    }
+  }
+}
+
+void excute_sdcard_config(void) {
+  bool skip_auto_resize = false;
+
+#if defined(CONFIG_RT_AUTO_RESIZE_PARTITION_ALWAYS)
+  if (!g_fs_mount_data_succ) {
+    int auto_resize_ret = execute_auto_resize("y");
+    if (0 > auto_resize_ret) {
+      rt_kprintf("auto resize data partition failed (%d)\n", auto_resize_ret);
+    }
+  }
+  skip_auto_resize = true;
+#endif
+
+  int fd = -1;
+  size_t length = 0;
+  size_t line_length = 0;
+
+  char *buffer = NULL;
+  char *buffer_end = NULL;
+  char *p_line_start = NULL;
+  char *p_line_end = NULL;
+
+  char line[LINE_MAX_SIZE];
+
+  if (0x00 == read_config_file(&fd, &buffer, &length, O_RDONLY)) {
+    close(fd);
+
+    buffer_end = buffer + length;
+    p_line_start = buffer;
+
+    while (p_line_start < buffer_end) {
+      p_line_end = rt_strstr(p_line_start, "\n");
+      if (NULL == p_line_end) {
+        p_line_end = buffer_end;
+      }
+      line_length = (size_t)(p_line_end - p_line_start);
+      if (sizeof(line) <= line_length) {
+        rt_kprintf("parse config, line data too long\n");
+        if (p_line_end == buffer_end) {
+          break;
+        }
+        p_line_start = p_line_end + 1;
+        continue;
+      }
+
+      if (0x00 != line_length) {
+        memcpy(line, p_line_start, line_length);
+        line[line_length] = '\0';
+
+        if ((0x00 != line_length) && ('\r' == line[line_length - 1])) {
+          line[--line_length] = '\0';
+        }
+
+        excete_line(line, skip_auto_resize);
+      }
+
+      if (p_line_end == buffer_end) {
+        break;
+      }
+      p_line_start = p_line_end + 1;
+    }
+  } else {
+#if !defined(CONFIG_RT_AUTO_RESIZE_PARTITION_ALWAYS)
+    rt_kprintf("open %s failed\n", RT_SMART_CONFIG_FILE_PATH);
+#endif
+  }
+
+  if (buffer) {
+    rt_free(buffer);
+  }
+}

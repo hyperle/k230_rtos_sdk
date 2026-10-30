@@ -1,0 +1,33 @@
+menu "Board Configuration"
+
+    choice RT_BOARD_CHIP_TYPE
+        bool "Board Chip"
+        default RT_BOARD_CHIP_K230
+
+        config RT_BOARD_CHIP_K230
+            bool "K230"
+
+        config RT_BOARD_CHIP_K230D
+            bool "K230D"
+    endchoice
+
+    config RT_USING_MPP
+        bool "Use Kendryte MPP"
+        default y
+
+    config RT_FASTBOOT
+        bool "Fastboot, disable some log output"
+        default n
+
+    config RT_BOARD_ENABLE_PINMUX
+        bool "Enable Pinmux Configure"
+        select RT_BOARD_ENABLE_PIN_INIT_SEQUENCE
+        default n
+
+    config RT_BOARD_ENABLE_PIN_INIT_SEQUENCE
+        bool "Enable Board Specific Pin Init Sequence"
+        default n
+        help
+            Build the board pin init hook without applying the full pinmux table.
+
+endmenu

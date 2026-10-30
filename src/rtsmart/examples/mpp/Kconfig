@@ -1,0 +1,204 @@
+if RTSMART_ENABLE_MPP_EXAMPLES
+
+  config RTSMART_MPP_ENABLE_SAMPLE_SC038HGS
+      bool "Enable Build sample_sc038hgs"
+      default n
+      depends on MPP_ENABLE_SENSOR_SC038HGS
+      help
+        Capture SC038HGS RAW10 through MCM without ISP calibration files.
+        Select a gradient or live image, save a frame and measure arrival rate.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_AHD_SENSOR
+      bool "Enable Build sample_ahd_sensor"
+      default n
+      depends on MPP_ENABLE_SENSOR_XS9950
+      help
+        One-channel XS9950 AHD capture, dewarp, and full-screen display demo
+        with a selectable CSI input and connector modes.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_AHD_MIPI_SENSOR
+      bool "Enable Build sample_ahd_mipi_sensor"
+      default n
+      depends on MPP_ENABLE_SENSOR_XS9950
+      help
+        Preview one MIPI sensor and one XS9950 MCM sensor with independent
+        CSI selections.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_AUDIO
+      bool "Enable Build sample_audio"
+      default n
+      help
+        Audio functionality demo: AI/AO, AENC/ADEC G.711/Opus, and I2S/PDM testing.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_CSC
+      bool "Enable Build sample_csc"
+      default n
+      help
+        Color Space Conversion and OSD hardware acceleration demo.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_DEMUXER
+      bool "Enable Build sample_demuxer"
+      default n
+      help
+        MP4 Demuxer: Extract raw bitstreams from MP4 containers.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_DW200
+      bool "Enable Build sample_dw200"
+      default n
+      select RTSMART_3RD_PARTY_ENABLE_CJSON
+      help
+        DW200 dewarp and scaler example driven by a JSON configuration file.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_FFT_DISPLAY
+      bool "Enable Build sample_fft_display"
+      default n
+
+  config RTSMART_MPP_ENABLE_SAMPLE_GSDMA
+      bool "Enable Build sample_gsdma"
+      default n
+      help
+        GDMA/SDMA data transfer and rotation accuracy testing.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_LOG
+      bool "Enable Build sample_log"
+      default n
+      help
+        Mpp Log interface testing and log level demonstration.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_MMZ
+      bool "Enable Build sample_mmz"
+      default n
+      help
+        Mpp Multimedia Memory Zone MMZ API usage demo.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_MUXER
+      bool "Enable Build sample_muxer"
+      default n
+      help
+        MP4 Muxer: Record video and audio into standard MP4 files.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_NONAI_2D
+      bool "Enable Build sample_nonai_2d"
+      default n
+      help
+        Hardware 2D acceleration for OSD graphic overlays on YUV frames.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_OGG
+      bool "Enable Build sample_ogg"
+      default n
+      help
+        Ogg/Opus loopback demo: Capture -> Encode -> Mux -> Demux -> Decode -> Play.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_PLAYER
+      bool "Enable Build sample_player"
+      default n
+      help
+        Lightweight media player for MP4 files via LCD or HDMI.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_PM
+      bool "Enable Build sample_pm"
+      default n
+      help
+        Power Management IC PMIC demonstration for EVB boards.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_RTSPCLIENT
+      bool "Enable Build sample_rtspclient"
+      default n
+      help
+        RTSP Client: Pull stream from server and decode for playback.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_RTSPPUSHER
+      bool "Enable Build sample_rtsppusher"
+      default n
+      depends on MPP_ENABLE_MIDDLEWARE_LIB_RTSP_PUSHER
+      help
+        RTSP Pusher: Push local camera feed to a remote RTSP server.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_RTSPSERVER
+      bool "Enable Build sample_rtspserver"
+      default n
+      help
+        RTSP Server: Provide local camera/audio as an RTSP stream.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_UVC_DEV_PICTURE
+      bool "Enable Build sample_uvc_dev_picture"
+      default n
+      help
+        UVC Device: Simulate a USB camera using a static firmware picture.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_UVC_DEV_VICAP
+      bool "Enable Build sample_uvc_dev_vicap"
+      default n
+      help
+        UVC Device: Simulate a USB camera using live local sensor data.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_UVC_HOST
+      bool "Enable Build sample_uvc_host"
+      default n
+      help
+        UVC Host: Access and display data from an external USB camera.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_VB
+      bool "Enable Build sample_vb"
+      default n
+      help
+        Video Buffer VB pool management and block allocation demo.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_VDEC
+      bool "Enable Build sample_vdec"
+      default n
+      help
+        Video Decoder: Hardware H.264/H.265 decoding to display.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_VENC
+      bool "Enable Build sample_venc"
+      default n
+      help
+        Video Encoder: Hardware H.264/H.265/JPEG encoding to file.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_VICAP
+      bool "Enable Build sample_vicap_sensor"
+      default n
+      help
+        Vicap Bind to Display and Dump to File
+
+  config RTSMART_MPP_ENABLE_SAMPLE_VICAP_AE
+      bool "Enable Build sample_vicap_ae"
+      default n
+      help
+        Preview a selectable image sensor and move an auto-exposure ROI over
+        the complete image while drawing the active ROI on the display.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_VO_MIX_ORDER
+      bool "Enable Build sample_vo_mix_order"
+      default n
+      help
+        Video Output: Demonstrate mixing order of different display layers.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_VO_OSD
+      bool "Enable Build sample_vo_osd"
+      default n
+      help
+        Video Output: Displaying images on OSD layers with rotation.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_VO_VIDEO
+      bool "Enable Build sample_vo_video"
+      default n
+      help
+        Video Output: Displaying live video on Video layers with rotation.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_VO_WBC_DUMP
+      bool "Enable Build sample_vo_wbc_dump"
+      default n
+      help
+        Video Output: Using Write Back Channel WBC to dump screen content to file.
+
+  config RTSMART_MPP_ENABLE_SAMPLE_WEBRTC
+      bool "Enable Build sample_webrtc"
+      default n
+      depends on RTSMART_3RD_PARTY_ENABLE_LIBPEER
+      help
+        WebRTC demo: Connect to signaling server and stream H.264 video and
+        G.711A audio via libpeer DataChannel.
+
+endif

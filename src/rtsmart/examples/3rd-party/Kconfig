@@ -1,0 +1,77 @@
+if RTSMART_ENABLE_3RD_PARTY_EXAMPLES
+
+    config RTSMART_3RD_PARTY_ENABLE_OPENCV_SAMPLES
+        bool "Enable Build OpenCV Sample Programs"
+        default n
+
+    config RTSMART_3RD_PARTY_ENABLE_OPENBLAS_SAMPLES
+        bool "Enable Build OpenBlas Sample Programs"
+        default n
+
+    config RTSMART_3RD_PARTY_ENABLE_FREETYPE_SAMPLES
+        bool "Enable Build FreeType Sample Programs"
+        default n
+        depends on RTSMART_3RD_PARTY_ENABLE_FREETYPE
+
+    config RTSMART_3RD_PARTY_ENABLE_LVGL_SAMPLES
+        bool "Enable Build Lvgl Sample Programs"
+        default n
+        depends on RTSMART_3RD_PARTY_ENABLE_LVGL
+
+    config RTSMART_3RD_PARTY_ENABLE_MBEDTLS_TESTS
+        bool "Enable Build MbedTLS Test Programs"
+        default n
+        depends on RTSMART_3RD_PARTY_ENABLE_MBEDTLS
+
+    config RTSMART_LIBS_MQTTCLIENT_ENABLE_TESTS
+        bool "Enable Build RtSmart MQTT Client Tests"
+        default n
+        depends on RTSMART_3RD_PARTY_ENABLE_MQTTCLIENT
+
+    config RTSMART_LIBS_MINIHTTP_ENABLE_SAMPLES
+        bool "Enable Build RtSmart minihttp Client Samples"
+        default n
+        depends on RTSMART_3RD_PARTY_ENABLE_MINIHTTP
+
+    config RTSMART_3RD_PARTY_ENABLE_TUYALINKSDK_SAMPLES
+        bool "Enable Build Tuya IoT Core SDK Sample Programs"
+        default n
+        depends on RTSMART_3RD_PARTY_ENABLE_TUYALINKSDK
+
+    config RTSMART_3RD_PARTY_ENABLE_CJSON_SAMPLES
+        bool "Enable Build cJSON Sample Programs"
+        default n
+        depends on RTSMART_3RD_PARTY_ENABLE_CJSON
+
+    config RTSMART_3RD_PARTY_ENABLE_LIBWEBSOCKETS_SAMPLES
+        bool "Enable Build libwebsockets Sample Programs"
+        default n
+        depends on RTSMART_3RD_PARTY_ENABLE_LIBWEBSOCKETS
+
+    config RTSMART_3RD_PARTY_ENABLE_NIMBLE_SAMPLES
+        bool "Enable Build NimBLE Sample Programs"
+        default n
+        depends on RTSMART_3RD_PARTY_ENABLE_NIMBLE
+
+    config RTSMART_3RD_PARTY_ENABLE_IPERF3
+        bool "Enable Build iperf3"
+        default n
+        help
+            Build the upstream iperf3 command-line program for RT-Smart.
+            The iperf source repository must be checked out in the iperf/iperf
+            directory by the SDK repo manifest.
+
+    menuconfig RTSMART_3RD_PARTY_ENABLE_XIAOZHI_SAMPLES
+        bool "Enable Build xiaozhi Sample Programs"
+        default n
+        depends on RTSMART_3RD_PARTY_ENABLE_LIBWEBSOCKETS
+        depends on RTSMART_3RD_PARTY_ENABLE_CJSON
+        help
+            Build the RT-Smart xiaozhi WebSocket client with MCP and K230
+            Opus audio support.
+
+        if RTSMART_3RD_PARTY_ENABLE_XIAOZHI_SAMPLES
+            source "$(SDK_RTSMART_SRC_DIR)/examples/3rd-party/xiaozhi/Kconfig"
+        endif
+
+endif

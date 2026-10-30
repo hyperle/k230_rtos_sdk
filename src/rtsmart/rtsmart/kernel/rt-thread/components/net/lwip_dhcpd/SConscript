@@ -1,0 +1,11 @@
+from building import *
+
+cwd = GetCurrentDir()
+
+src = ['dhcp_server_raw.c']
+
+CPPPATH = [cwd]
+
+group = DefineGroup('lwIP', src, depend = ['RT_USING_LWIP', 'LWIP_USING_DHCPD'], CPPPATH = CPPPATH)
+
+Return('group')
