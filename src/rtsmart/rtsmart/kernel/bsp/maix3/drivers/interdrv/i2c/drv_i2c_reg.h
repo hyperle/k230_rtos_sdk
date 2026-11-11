@@ -439,14 +439,15 @@ struct dw_ic_tx_abrt_source_t {
             uint32_t ABRT_GCALL_READ          : 1;  /* bit 5  */
             uint32_t ABRT_HS_ACKDET           : 1;  /* bit 6  */
             uint32_t ABRT_SBYTE_ACKDET        : 1;  /* bit 7  */
-            uint32_t ABRT_SBYTE_NORSTRT       : 1;  /* bit 8  */
-            uint32_t ABRT_10B_RD_NORSTRT      : 1;  /* bit 9  */
-            uint32_t ABRT_MASTER_DIS          : 1;  /* bit 10 */
-            uint32_t ABRT_ARB_LOST            : 1;  /* bit 11 */
-            uint32_t ABRT_SLVFLUSH_TXFIFO     : 1;  /* bit 12 */
-            uint32_t ABRT_SLV_ARBLOST         : 1;  /* bit 13 */
-            uint32_t ABRT_SLV_RD_INTX         : 1;  /* bit 14 */
-            uint32_t RSVD_IC_TX_ABRT_SOURCE   : 17; /* bits 31:15 */
+            uint32_t ABRT_HS_NORSTRT          : 1;  /* bit 8  */
+            uint32_t ABRT_SBYTE_NORSTRT       : 1;  /* bit 9  */
+            uint32_t ABRT_10B_RD_NORSTRT      : 1;  /* bit 10 */
+            uint32_t ABRT_MASTER_DIS          : 1;  /* bit 11 */
+            uint32_t ABRT_ARB_LOST            : 1;  /* bit 12 */
+            uint32_t ABRT_SLVFLUSH_TXFIFO     : 1;  /* bit 13 */
+            uint32_t ABRT_SLV_ARBLOST         : 1;  /* bit 14 */
+            uint32_t ABRT_SLV_RD_INTX         : 1;  /* bit 15 */
+            uint32_t RSVD_IC_TX_ABRT_SOURCE   : 16; /* bits 31:16 */
         } bits;
         uint32_t reg;
     };

@@ -69,3 +69,64 @@ target_link_libraries(canmv_unit_tests PRIVATE
 gtest_discover_tests(canmv_unit_tests
     DISCOVERY_TIMEOUT 60
 )
+
+# Compile the production buffer manager against real SDK frame types; only the
+# MicroPython GIL and hardware MPI calls are replaced by the host test model.
+add_executable(canmv_vicap_buffer_tests
+    tests/test_vicap_buffer.cpp
+    "${CANMV_ROOT}/port/core/mpp_vb_mgmt.c"
+)
+target_compile_definitions(canmv_vicap_buffer_tests PRIVATE _DEFAULT_SOURCE)
+target_include_directories(canmv_vicap_buffer_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs"
+    "${CANMV_ROOT}/port/include/core"
+    "${CANMV_ROOT}/../rtsmart/mpp/userapps/api"
+    "${CANMV_ROOT}/../rtsmart/mpp/include"
+    "${CANMV_ROOT}/../rtsmart/mpp/include/comm"
+)
+target_link_libraries(canmv_vicap_buffer_tests PRIVATE
+    GTest::gtest GTest::gtest_main Threads::Threads
+)
+gtest_discover_tests(canmv_vicap_buffer_tests DISCOVERY_TIMEOUT 60)
+
+# Exercise the production IDE encoder with frame ownership enforced by MPI mocks.
+add_executable(canmv_wbc_buffer_tests
+    tests/test_wbc_buffer.cpp
+    "${CANMV_ROOT}/port/omv/ide_dbg_vo_wbc.c"
+)
+target_compile_definitions(canmv_wbc_buffer_tests PRIVATE _DEFAULT_SOURCE)
+target_include_directories(canmv_wbc_buffer_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs"
+    "${CANMV_ROOT}/../../include"
+    "${CANMV_ROOT}/port/include"
+    "${CANMV_ROOT}/../rtsmart/libs/rtsmart_hal/utils"
+    "${CANMV_ROOT}/../rtsmart/mpp/userapps/api"
+    "${CANMV_ROOT}/../rtsmart/mpp/userapps/api/framework"
+    "${CANMV_ROOT}/../rtsmart/mpp/include"
+    "${CANMV_ROOT}/../rtsmart/mpp/include/comm"
+)
+target_link_libraries(canmv_wbc_buffer_tests PRIVATE
+    GTest::gtest GTest::gtest_main Threads::Threads
+)
+gtest_discover_tests(canmv_wbc_buffer_tests DISCOVERY_TIMEOUT 60)
+
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(NAME SensorBufferTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_sensor_buffer.py"
+)
+
+add_test(NAME DevfsBlockIoTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_devfs_block_io.py"
+)
+
+add_test(NAME DisplayBufferTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_display_buffer.py"
+)
+
+add_test(NAME SensorLifecycleTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_sensor_lifecycle.py"
+)
+
+add_test(NAME SensorSoftResetTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_sensor_soft_reset.py"
+)

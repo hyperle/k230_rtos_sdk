@@ -140,7 +140,8 @@ static void wbc_cleanup_resources(void)
     // Always release WBC frame
     py_display_wbc_dump_relase();
 
-    // Reset all other state
+    // Reset all other state, including failed encodes that require a fresh init.
+    g_wbc_ctx.inited   = 0;
     g_wbc_ctx.width    = 0;
     g_wbc_ctx.height   = 0;
     g_wbc_ctx.quality  = 0;
@@ -336,20 +337,18 @@ static int ide_dbg_vo_wbc_dump_and_encode_locked(void** buffer, size_t* buffer_s
         return -1;
     }
 
-    // Dump the frame from WBC
+    // Initialization probes WBC and releases its frame. Finish it before
+    // acquiring the encoder input, or the probe releases that input as well.
+    if (!g_wbc_ctx.inited) {
+        if (ide_dbg_vo_wbc_init() != 0) {
+            return -1;
+        }
+    }
+
     k_video_frame_info vf_info;
     if (py_display_wbc_dump(&vf_info, 1000, 1) != 0) {
         // printf("ide dbg vo wbc failed to dump WBC frame\n");
         return -1;
-    }
-
-    // Initialize once only
-    if (!g_wbc_ctx.inited) {
-        if (ide_dbg_vo_wbc_init() != 0) {
-            py_display_wbc_dump_relase();
-
-            return -1;
-        }
     }
 
     // Send to VENC
@@ -371,7 +370,8 @@ static int ide_dbg_vo_wbc_dump_and_encode_locked(void** buffer, size_t* buffer_s
     hal_rvv_memset(&venc_status, 0, sizeof(venc_status));
 
     if (kd_mpi_venc_query_status(g_wbc_ctx.chn_id, &venc_status) != 0) {
-        py_display_wbc_dump_relase();
+        // Submission succeeded; stop VENC before returning its input to WBC.
+        wbc_cleanup_resources();
 
         printf("ide dbg vo wbc failed to query VENC status\n");
         return -1;
@@ -397,7 +397,8 @@ static int ide_dbg_vo_wbc_dump_and_encode_locked(void** buffer, size_t* buffer_s
     hal_rvv_memset(stream.pack, 0, sizeof(k_venc_pack) * stream.pack_cnt);
 
     if (kd_mpi_venc_get_stream(g_wbc_ctx.chn_id, &stream, 1000) != 0) {
-        py_display_wbc_dump_relase();
+        // A timeout does not prove that VENC has finished reading the input.
+        wbc_cleanup_resources();
 
         printf("ide dbg vo wbc failed to get stream from VENC\n");
         return -1;
@@ -442,14 +443,24 @@ static int ide_dbg_vo_wbc_dump_and_encode_locked(void** buffer, size_t* buffer_s
     k_u64 dst_offset = 0;
     for (k_u32 i = 0; i < stream.pack_cnt && i < MAX_VENC_PACKS; i++) {
         if (stream.pack[i].len > 0 && stream.pack[i].phys_addr != 0) {
-            kd_mpi_dma_memcpy((void*)(uintptr_t)(g_wbc_ctx.output_phys_addr + dst_offset),
-                              (void*)(uintptr_t)stream.pack[i].phys_addr, stream.pack[i].len);
+            void *dst = (void *)(uintptr_t)(g_wbc_ctx.output_phys_addr + dst_offset);
+            if (kd_mpi_dma_memcpy(dst, (void *)(uintptr_t)stream.pack[i].phys_addr,
+                                  stream.pack[i].len) != dst) {
+                kd_mpi_venc_release_stream(g_wbc_ctx.chn_id, &stream);
+                printf("ide dbg vo wbc DMA copy failed; dropping frame\n");
+                return -1;
+            }
             dst_offset += stream.pack[i].len;
         }
     }
 
-    // Invalidate cache
-    kd_mpi_sys_mmz_invalidate_cache(g_wbc_ctx.output_phys_addr, g_wbc_ctx.output_virt_addr, total_len);
+    // Do not publish old cached JPEG bytes when DMA/CPU synchronization fails.
+    if (kd_mpi_sys_mmz_invalidate_cache(g_wbc_ctx.output_phys_addr,
+                                       g_wbc_ctx.output_virt_addr, total_len) != 0) {
+        kd_mpi_venc_release_stream(g_wbc_ctx.chn_id, &stream);
+        printf("ide dbg vo wbc invalidate cache failed; dropping frame\n");
+        return -1;
+    }
 
     // Return buffer info
     *buffer      = g_wbc_ctx.output_virt_addr;

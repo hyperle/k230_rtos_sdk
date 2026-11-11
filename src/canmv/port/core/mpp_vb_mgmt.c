@@ -108,6 +108,8 @@ k_s32 vb_mgmt_dump_vicap_frame(vb_mgmt_dump_vicap_config *cfg, vb_mgmt_vicap_ima
         return 1;
     }
 
+    memset(image, 0, sizeof(*image));
+
     for (int i = 0; i < VB_MGMT_VICAP_IMAGE_MAX_CNT; i++)
     {
         if (VB_MGMT_VICAP_IMAGE_MAGIC_IN_USE != vicap_images[i].magic)
@@ -168,6 +170,16 @@ k_s32 vb_mgmt_dump_vicap_frame(vb_mgmt_dump_vicap_config *cfg, vb_mgmt_vicap_ima
         return 5;
     }
 
+    /* DMA has produced a new frame. Mapping cached memory does not discard
+     * cache lines left by the previous owner of this physical VB block. */
+    if (0x00 != kd_mpi_sys_mmz_invalidate_cache(
+            _image->vf_info.v_frame.phys_addr[0],
+            (void *)_image->vf_info.v_frame.virt_addr[0], _image->image_size)) {
+        printf("invalidate vicap image cache failed.\n");
+        vb_mgmt_release_vicap_frame(_image);
+        return 6;
+    }
+
     memcpy(image, _image, sizeof(*_image));
 
     return 0;
@@ -175,37 +187,56 @@ k_s32 vb_mgmt_dump_vicap_frame(vb_mgmt_dump_vicap_config *cfg, vb_mgmt_vicap_ima
 
 k_s32 vb_mgmt_release_vicap_frame(vb_mgmt_vicap_image *image)
 {
-    k_s32 ret = 0;
+    vb_mgmt_vicap_image *record = NULL;
+    k_s32 ret;
 
-    if((NULL == image) || (VB_MGMT_VICAP_IMAGE_MAGIC_IN_USE != image->magic))
-    {
+    if ((NULL == image) || (VB_MGMT_VICAP_IMAGE_MAGIC_IN_USE != image->magic)) {
         return 1;
     }
 
-    if(0x00 != (ret += kd_mpi_sys_munmap((void *)image->vf_info.v_frame.virt_addr[0], image->image_size)))
-    {
-        printf("release image failed(1).\n");
-    }
-
-    if(0x00 != (ret += kd_mpi_vicap_dump_release(image->cfg.dev_num, image->cfg.chn_num, &image->vf_info)))
-    {
-        printf("release image failed(2).\n");
-    }
-
-    if(0x00 == ret)
-    {
-        for (int i = 0; i < VB_MGMT_VICAP_IMAGE_MAX_CNT; i++)
-        {
-            if ((VB_MGMT_VICAP_IMAGE_MAGIC_IN_USE == vicap_images[i].magic) && \
-                (image->vf_info.v_frame.phys_addr[0] == vicap_images[i].vf_info.v_frame.phys_addr[0]) && \
-                (image->vf_info.v_frame.virt_addr[0] == vicap_images[i].vf_info.v_frame.virt_addr[0]))
-            {
-                vicap_images[i].magic = 0x00;
-            }
+    for (int i = 0; i < VB_MGMT_VICAP_IMAGE_MAX_CNT; i++) {
+        if ((VB_MGMT_VICAP_IMAGE_MAGIC_IN_USE == vicap_images[i].magic) &&
+            (image->vf_info.v_frame.phys_addr[0] == vicap_images[i].vf_info.v_frame.phys_addr[0]) &&
+            (image->vf_info.v_frame.virt_addr[0] == vicap_images[i].vf_info.v_frame.virt_addr[0]) &&
+            (image->cfg.dev_num == vicap_images[i].cfg.dev_num) &&
+            (image->cfg.chn_num == vicap_images[i].cfg.chn_num)) {
+            record = &vicap_images[i];
+            break;
         }
     }
+    if (NULL == record) {
+        return 1;
+    }
 
-    return ret;
+    if (record->vf_info.v_frame.virt_addr[0]) {
+        /* RGB888 -> RGB565 and drawing can dirty this borrowed VB mapping.
+         * Clean and invalidate it while the frame is still owned, before DMA
+         * is allowed to reuse it. A late writeback would corrupt a new frame. */
+        ret = kd_mpi_sys_mmz_flush_cache(record->vf_info.v_frame.phys_addr[0],
+                (void *)record->vf_info.v_frame.virt_addr[0], record->image_size);
+        if (ret) {
+            printf("flush vicap image cache failed.\n");
+            return ret;
+        }
+        ret = kd_mpi_sys_munmap((void *)record->vf_info.v_frame.virt_addr[0], record->image_size);
+        if (ret) {
+            printf("release image failed(1).\n");
+            return ret;
+        }
+        /* Preserve this state if the driver release needs to be retried. */
+        record->vf_info.v_frame.virt_addr[0] = 0;
+        image->vf_info.v_frame.virt_addr[0] = 0;
+    }
+
+    ret = kd_mpi_vicap_dump_release(record->cfg.dev_num, record->cfg.chn_num, &record->vf_info);
+    if (ret) {
+        printf("release image failed(2).\n");
+        return ret;
+    }
+
+    record->magic = 0;
+    image->magic = 0;
+    return 0;
 }
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////

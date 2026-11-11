@@ -275,23 +275,101 @@ menu "MPP Configuration"
             endif
 
         menuconfig MPP_ENABLE_SENSOR_SC132GS
-            bool "Enable SC123GS"
+            bool "Enable SC132GS (MIPI RAW10)"
+            depends on MPP_ENABLE_CSI_DEV_0 || MPP_ENABLE_CSI_DEV_1 || MPP_ENABLE_CSI_DEV_2
             default n
+            help
+                SC132GS global-shutter sensor, chip ID 0x0132. Probe all four
+                SID-selected I2C addresses (0x30-0x33). The existing vendor
+                tables provide nominal 1080x1280@120 and 640x480@240 modes
+                with a 24 MHz reference clock. Actual capture needs board
+                validation; the supplied module has a 22-pin connector.
 
             if MPP_ENABLE_SENSOR_SC132GS
 
+                config MPP_SC132GS_SKIP_CHIP_ID_CHECK
+                    bool "Bind SC132GS at a fixed address without chip ID matching"
+                    default n
+                    help
+                        Use only when the board is known to have an SC132GS.
+                        Register the configured device without scanning chip IDs,
+                        and do not read the ID during mode initialization.
+                        ISP revision queries return the actual ID without matching
+                        it against 0x0132; failed ID reads still return an error.
+                        I2C transfer errors and mode readback checks still fail.
+
+                config MPP_SC132GS_I2C_ADDRESS
+                    hex "Fixed SC132GS 7-bit I2C address"
+                    depends on MPP_SC132GS_SKIP_CHIP_ID_CHECK
+                    range 0x30 0x33
+                    default 0x30
+
+                config MPP_SC132GS_CSI0_4LANE
+                    bool "SC132GS CSI0 four-lane input (uses CSI0 and CSI1 pads)"
+                    depends on MPP_ENABLE_CSI_DEV_0
+                    default n
+                    help
+                        Combine PHY0 and PHY1 into one CSI0 four-lane receiver.
+                        Wire sensor D0/D1 to CSI0 and D2/D3 to CSI1, with the
+                        clock pair on CSI0. Do not enable a separate CSI1
+                        sensor device: its data pads belong to this camera.
+                        CSI2 remains available as an independent two-lane input.
+                        Uses the documented lane selector and existing vendor
+                        PLL settings; validate four-lane timing on hardware.
+
+                config MPP_SC132GS_CSI0_CLOCK_INVERT
+                    bool "SC132GS CSI0 MIPI clock invert"
+                    depends on MPP_ENABLE_CSI_DEV_0
+                    default n
+                    help
+                        Set sensor register 0x3654 bit 3 for the CSI0 clock.
+                        Keep disabled for the tested directly stacked Dart
+                        SC132GS module: enabling it stopped continuous frames.
+                        Connector labels alone do not establish whether this
+                        sensor clock phase option is needed. Enable only after
+                        a hardware capture test. Other CSI ports and data-lane polarity
+                        are unchanged. This does not change the Y1 frequency
+                        or the clock-delay bits in 0x3654.
+
+                config MPP_SC132GS_EXTCLK_HZ
+                    int "SC132GS external reference clock (Hz)"
+                    range 6000000 24000000
+                    default 24000000
+                    help
+                        Reference clock for the supplied vendor mode tables.
+                        Verify the adapter's oscillator frequency on hardware.
+                        This does not configure a K230 MCLK output. The chip
+                        MCLK options below instead use 23.76 MHz and scale
+                        the nominal frame rate and line time accordingly.
+
+                config MPP_SC132GS_MONO
+                    bool "SC132GS monochrome sensor variant"
+                    default n
+                    help
+                        Enable only for a confirmed monochrome part. The
+                        module drawing does not identify its CFA variant.
+
+                config MPP_SC132GS_POWER_ACTIVE_LOW
+                    bool "SC132GS CSI power GPIO is active low"
+                    default n
+                    help
+                        Normally the CSI power GPIO is high to enable the
+                        module, matching an active-low XSHUTDN input. Enable
+                        for an inverted board-level power/PWDN circuit only.
+                        Set the CSI power/reset GPIOs to -1 when unconnected.
+
                 config MPP_ENABLE_SENSOR_SC132GS_ON_CSI0_USE_CHIP_CLK
-                    bool "SC123GS On CSI0 Use CHIP MCLK"
+                    bool "SC132GS On CSI0 Use CHIP MCLK (23.76 MHz)"
                     default n
                     depends on MPP_ENABLE_CSI_DEV_0
 
                 config MPP_ENABLE_SENSOR_SC132GS_ON_CSI1_USE_CHIP_CLK
-                    bool "SC123GS On CSI1 Use CHIP MCLK"
+                    bool "SC132GS On CSI1 Use CHIP MCLK (23.76 MHz)"
                     default n
-                    depends on MPP_ENABLE_CSI_DEV_1
+                    depends on MPP_ENABLE_CSI_DEV_1 && !MPP_SC132GS_CSI0_4LANE
 
                 config MPP_ENABLE_SENSOR_SC132GS_ON_CSI2_USE_CHIP_CLK
-                    bool "SC123GS On CSI2 Use CHIP MCLK"
+                    bool "SC132GS On CSI2 Use CHIP MCLK (23.76 MHz)"
                     default n
                     depends on MPP_ENABLE_CSI_DEV_2
             endif

@@ -731,6 +731,11 @@ static const k_vicap_sensor_info sensor_info_list[] = {
 #endif // CONFIG_MPP_ENABLE_SENSOR_GC2093
 
 #if defined (CONFIG_MPP_ENABLE_SENSOR_SC132GS)
+#ifdef CONFIG_MPP_SC132GS_CSI0_4LANE
+#define SC132GS_CSI0_MIPI_LANES VICAP_MIPI_4LANE
+#else
+#define SC132GS_CSI0_MIPI_LANES VICAP_MIPI_2LANE
+#endif
 #if defined (CONFIG_MPP_ENABLE_CSI_DEV_0)
     {
         "sc132gs_csi0",
@@ -738,7 +743,7 @@ static const k_vicap_sensor_info sensor_info_list[] = {
         1080,
         1280,
         VICAP_CSI0,
-        VICAP_MIPI_2LANE,
+        SC132GS_CSI0_MIPI_LANES,
         VICAP_SOURCE_CSI0,
         K_FALSE,
         VICAP_MIPI_PHY_1200M,
@@ -756,7 +761,7 @@ static const k_vicap_sensor_info sensor_info_list[] = {
         640,
         480,
         VICAP_CSI0,
-        VICAP_MIPI_2LANE,
+        SC132GS_CSI0_MIPI_LANES,
         VICAP_SOURCE_CSI0,
         K_FALSE,
         VICAP_MIPI_PHY_800M,
@@ -770,7 +775,7 @@ static const k_vicap_sensor_info sensor_info_list[] = {
     },
 #endif // CONFIG_MPP_ENABLE_CSI_DEV_0
 
-#if defined (CONFIG_MPP_ENABLE_CSI_DEV_1)
+#if defined(CONFIG_MPP_ENABLE_CSI_DEV_1) && !defined(CONFIG_MPP_SC132GS_CSI0_4LANE)
     {
         "sc132gs_csi1",
         "sc132gs-1080x1280",
@@ -847,6 +852,7 @@ static const k_vicap_sensor_info sensor_info_list[] = {
         SC132GS_MIPI_CSI2_640X480_240FPS_10BIT_LINEAR,
     },
 #endif // CONFIG_MPP_ENABLE_CSI_DEV_2
+#undef SC132GS_CSI0_MIPI_LANES
 #endif // CONFIG_MPP_ENABLE_SENSOR_SC132GS
 
 #if defined (CONFIG_MPP_ENABLE_SENSOR_SC130GS)

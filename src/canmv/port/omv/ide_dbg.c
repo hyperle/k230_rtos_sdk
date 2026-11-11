@@ -24,6 +24,7 @@
 
 /* MicroPython core */
 #include "py/mpconfig.h"
+#include "py/gc.h"
 #include "py/mpstate.h"
 #include "py/mpthread.h"
 #include "py/obj.h"
@@ -101,6 +102,21 @@ static mp_obj_exception_t ide_exception; //IDE interrupt
 static mp_obj_str_t ide_exception_str;
 static mp_obj_tuple_t* ide_exception_str_tuple = NULL;
 static bool ide_dbg_rx_incomplete = false;
+
+/* ide_exception lives outside the GC heap, but raising it makes the VM
+ * allocate its traceback buffer on the heap. Without a root, a gc.collect()
+ * in an except/finally block frees that buffer while the exception is still
+ * propagating, and the next traceback entry gc_realloc()s a freed block.
+ * Clear the traceback before each raise (as upstream does for KeyboardInterrupt)
+ * so no pointer survives into the next raise or across a soft-reset heap init. */
+static void ide_dbg_raise_ide_exception(void) {
+    mp_obj_exception_clear_traceback(MP_OBJ_FROM_PTR(&ide_exception));
+    mp_thread_set_exception_main(MP_OBJ_FROM_PTR(&ide_exception));
+}
+
+void ide_dbg_gc_collect_roots(void) {
+    gc_collect_root((void **)&ide_exception, sizeof(ide_exception) / sizeof(void *));
+}
 
 extern drv_uart_inst_t *mp_hal_uart_get_instance(void);
 extern int mp_hal_uart_tx(const void* buffer, size_t size);
@@ -732,6 +748,8 @@ void ide_dbg_on_script_end(void) {
 }
 
 void ide_dbg_on_soft_reset(void) {
+    // The heap is about to be reinitialized; drop the old traceback pointer.
+    mp_obj_exception_clear_traceback(MP_OBJ_FROM_PTR(&ide_exception));
     ide_dbg_clear_fb(false);
     ide_dbg_set_repl_script_running(false);
     ide_dbg_vtouch_close();
@@ -771,7 +789,7 @@ static void ide_dbg_request_soft_reset(void) {
     mp_hal_stdin_clear();
     wait_mp_irq_handler_done();
     if (interrupt_running_script) {
-        mp_thread_set_exception_main(MP_OBJ_FROM_PTR(&ide_exception));
+        ide_dbg_raise_ide_exception();
     }
     const uint8_t ctrl_d = CHAR_CTRL_D;
     mp_hal_stdin_push(&ctrl_d, 1);
@@ -969,7 +987,7 @@ static void cmd_arch_str(ide_dbg_state_t* state) {
 static void cmd_script_exec(ide_dbg_state_t* state) {
     pr_verb("cmd: USBDBG_SCRIPT_EXEC size %u", state->data_length);
     if (ide_dbg_python_running() && !ide_dbg_take_soft_reset_request()) {
-        mp_thread_set_exception_main(MP_OBJ_FROM_PTR(&ide_exception));
+        ide_dbg_raise_ide_exception();
     }
     usleep(1000);
     if (ide_dbg_is_script_running()) {

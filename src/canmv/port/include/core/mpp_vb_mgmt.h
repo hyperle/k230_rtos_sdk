@@ -15,14 +15,14 @@ typedef struct
     k_u32 size; // self.size = size, user set
 }vb_block_info;
 
-typedef struct {
+typedef struct vb_mgmt_dump_vicap_config {
     k_vicap_dev dev_num;
     k_vicap_chn chn_num;
     k_vicap_dump_format foramt;
     k_u32 milli_sec;
 } vb_mgmt_dump_vicap_config;
 
-typedef struct {
+typedef struct vb_mgmt_vicap_image {
     k_u64 magic;
 
     k_u64 image_size;

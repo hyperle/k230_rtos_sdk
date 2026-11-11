@@ -185,7 +185,7 @@ STATIC mp_obj_t machine_fpioa_set_pin_cfg(mp_obj_t self, mp_obj_t obj)
     int                        result;
     machine_pin_cfg_context_t* ctx = machine_pin_cfg_cobj(MP_OBJ_TO_PTR(obj));
 
-    result = drv_fpioa_get_pin_cfg(ctx->pin, &ctx->cfg.u.value);
+    result = drv_fpioa_set_pin_cfg(ctx->pin, ctx->cfg.u.value);
 
     return mp_obj_new_bool(0x00 == result);
 }

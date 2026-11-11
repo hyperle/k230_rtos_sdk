@@ -231,14 +231,19 @@ k_s32 sensor_priv_ioctl(struct sensor_driver_dev *dev, k_u32 cmd, void *args)
                 return -1;
             }
 
-            if (power_on && dev->power_flag) {
+            if (power_on && dev->power_flag
+#ifdef CONFIG_MPP_ENABLE_SENSOR_SC132GS
+                && sensor_sc132gs_power_cache_valid(dev)
+#endif
+            ) {
                 ret = 0;
                 break;
             }
 
 			ret = dev->sensor_func.sensor_power(dev, power_on);
             if (!power_on) {
-                dev->power_flag = K_FALSE;
+                if (!ret)
+                    dev->power_flag = K_FALSE;
                 dev->init_flag = K_FALSE;
                 dev->mode_init_flag = K_FALSE;
             } else if (!ret) {
@@ -259,8 +264,12 @@ k_s32 sensor_priv_ioctl(struct sensor_driver_dev *dev, k_u32 cmd, void *args)
                 return -1;
             }
 
-            if (dev->mode_init_flag &&
-                dev->current_sensor_mode.sensor_type == sensor_mode.sensor_type) {
+            if (dev->power_flag && dev->init_flag && dev->mode_init_flag &&
+                dev->current_sensor_mode.sensor_type == sensor_mode.sensor_type
+#ifdef CONFIG_MPP_ENABLE_SENSOR_SC132GS
+                && sensor_sc132gs_power_cache_valid(dev)
+#endif
+            ) {
                 ret = 0;
                 break;
             }

@@ -205,7 +205,12 @@ void drv_gpio_inst_destroy(drv_gpio_inst_t** inst)
         return;
     }
 
-    drv_gpio_mode_set(*inst, GPIO_DM_INPUT);
+    /* A peripheral may have reclaimed this pad since the Pin was created.
+     * Do not switch that peripheral back to GPIO when the old Pin is freed. */
+    fpioa_func_t func;
+    if (drv_fpioa_get_pin_func((*inst)->pin, &func) == 0 && func == (fpioa_func_t)(GPIO0 + (*inst)->pin)) {
+        drv_gpio_mode_set(*inst, GPIO_DM_INPUT);
+    }
     drv_gpio_close();
 
     free(*inst);

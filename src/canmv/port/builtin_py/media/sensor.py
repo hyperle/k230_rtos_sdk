@@ -72,6 +72,9 @@ class Sensor:
     SNAPSHOT_FAILURE_WINDOW_MS = const(10000)
     # VICAP stops the capture pipeline asynchronously before deinit can release it.
     VICAP_STOP_STREAM_DELAY_MS = const(100)
+    # VB_MGMT_VICAP_IMAGE_MAGIC_IN_USE in core/mpp_vb_mgmt.c: set only while
+    # the native layer owns a dumped frame for this struct.
+    VICAP_IMAGE_IN_USE = const(0x1234DEAD)
 
     _devs = [None for i in range(0, CAM_DEV_ID_MAX)]
     _csis = [False for i in range(0, CAM_DEV_ID_MAX)]
@@ -98,8 +101,11 @@ class Sensor:
         """Release media resources.
         """
         for i in range(0, CAM_DEV_ID_MAX):
-            if isinstance(cls._devs[i], Sensor):
-                cls._devs[i].stop(is_del = True)
+            owner = cls._devs[i]
+            if isinstance(owner, Sensor):
+                owner.stop(is_del = True)
+                if cls._devs[i] is owner:
+                    raise RuntimeError("sensor(%d) cleanup incomplete; resources retained" % i)
 
     @classmethod
     def _is_mcm_device(cls) -> bool:
@@ -257,6 +263,21 @@ class Sensor:
 
         return dev_id
 
+    @classmethod
+    def _release_csi_for_reinit(cls, csi, force):
+        if not cls._csis[csi]:
+            return
+        if not force:
+            raise OSError(f"sensor({csi}) is already inited.")
+        for owner in cls._devs:
+            if isinstance(owner, Sensor) and owner._csi_bus == csi:
+                if owner._dev_attr.dev_enable:
+                    owner.stop()  # Failure retains ownership; force must not steal it.
+                else:
+                    owner.stop(is_del=True)
+        if cls._csis[csi]:
+            raise OSError(f"sensor({csi}) cleanup is still pending.")
+
     # id
     # type
     # force
@@ -280,8 +301,7 @@ class Sensor:
             raise AssertionError(f"invaild sensor id {self._csi_bus}, should < {CAM_DEV_ID_MAX - 1}")
 
         force = kwargs.get('force', False)
-        if not force and Sensor._csis[self._csi_bus]:
-            raise OSError(f"sensor({self._csi_bus}) is already inited.")
+        Sensor._release_csi_for_reinit(self._csi_bus, force)
 
         brd = os.uname()[-1]
         if brd.startswith("k230d"):
@@ -355,7 +375,10 @@ class Sensor:
     def __del__(self):
         """Release resources held by this object.
         """
-        self.stop(is_del = True)
+        # A retired object's finalizer must not tear down a newer owner, and
+        # a constructor which failed before claiming a slot has nothing to stop.
+        if hasattr(self, "_dev_id") and Sensor._devs[self._dev_id] is self:
+            self.stop(is_del = True)
 
     def __str__(self):
         """Return a string representation of this object.
@@ -558,13 +581,27 @@ class Sensor:
 
     # for snapshot
     @staticmethod
+    def _holds_frame(img):
+        """Return True only if the native layer still owns a frame for img.
+
+        An IDE interrupt can land between a native release and clearing the
+        slot (leaving a released struct) or between creating the struct and a
+        failed dump; neither holds a frame and must not be released again.
+        """
+        return is_vb_mgmt_vicap_image(img) and \
+            getattr(img, "magic", 0) == Sensor.VICAP_IMAGE_IN_USE
+
+    # for snapshot
+    @staticmethod
     def _release_image(img):
         """Internal helper method.
         Args:
             img: Value for img.
         """
-        if is_vb_mgmt_vicap_image(img):
-            vb_mgmt_release_vicap_frame(img)
+        if Sensor._holds_frame(img):
+            ret = vb_mgmt_release_vicap_frame(img)
+            if ret:
+                raise RuntimeError("release vicap image failed (%d)" % ret)
 
     # for snapshot
     def _release_all_chn_image(self):
@@ -579,7 +616,7 @@ class Sensor:
         Args:
             chn: Media channel number.
         """
-        if is_vb_mgmt_vicap_image(self._imgs[chn]):
+        if Sensor._holds_frame(self._imgs[chn]):
             return self._imgs[chn]
         return None
 
@@ -642,16 +679,19 @@ class Sensor:
 
         dumped_img = vb_mgmt_vicap_image()
 
+        # Own the struct before the native dump. A pending IDE interrupt is
+        # raised as soon as the call returns; the frame it filled must still be
+        # reachable from this slot so stop()/soft reset can release it.
+        self._imgs[chn] = dumped_img
         ret = vb_mgmt_dump_vicap_frame(cfg, dumped_img)
         if ret != 0:
+            self._imgs[chn] = None
             if auto_reboot:
                 self._record_snapshot_failure(chn, ret)
             raise RuntimeError(f"sensor({self._dev_id}) snapshot chn({chn}) failed({ret})")
 
         if auto_reboot:
             self._reset_snapshot_failure_state()
-
-        self._imgs[chn] = dumped_img
 
         if dump_frame:
             return py_video_frame_info(dumped_img.vf_info)
@@ -1287,6 +1327,11 @@ class Sensor:
         if self._is_started:
             return
 
+        # A previous failed/interruptible start can still own native resources.
+        # Finish that cleanup before submitting attributes or initializing again.
+        if self._vicap_init_started or self._vicap_stream_start_started:
+            self._stop_vicap()
+
         self._apply_database_parse_mode()
 
         ret = kd_mpi_vicap_set_dev_attr(self._dev_id, self._dev_attr)
@@ -1312,11 +1357,14 @@ class Sensor:
             # if self._pixel_format[chn_num] is None:
             #     print(f"sensor({self._dev_id}) chn({chn_num}) not call `set_pixformat`, at now should reboot board to fix it.")
 
+            self._rollback_failed_run()
             raise RuntimeError(f"sensor({self._dev_id}) run error, vicap init failed({ret})")
 
         sensor_attr = k_vicap_sensor_attr()
         sensor_attr.dev_num = self._dev_id
-        if 0x00 != kd_mpi_vicap_get_sensor_fd(sensor_attr):
+        ret = kd_mpi_vicap_get_sensor_fd(sensor_attr)
+        if ret:
+            self._rollback_failed_run()
             raise RuntimeError(f"sensor({self._dev_id}) run error, get sensor fd failed({ret})")
         self.fd = sensor_attr.sensor_fd
 
@@ -1324,71 +1372,69 @@ class Sensor:
         self._vicap_stream_start_started = True
         ret = kd_mpi_vicap_start_stream(self._dev_id)
         if ret:
+            self._rollback_failed_run()
             raise RuntimeError(f"sensor({self._dev_id}) run error, vicap start stream failed({ret})")
 
         self._is_started = True
         self._vb_mgmt_registered = True
         vb_mgmt_vicap_dev_inited(self._dev_id)
 
+    def _stop_vicap(self):
+        """Finish native cleanup, keeping each failed step owned for retry."""
+        self._release_all_chn_image()
+        if self._vicap_stream_start_started or self._is_started:
+            ret = kd_mpi_vicap_stop_stream(self._dev_id)
+            if ret:
+                raise RuntimeError(f"sensor({self._dev_id}) stop error, stop stream failed({ret})")
+            self._is_started = False
+            self._vicap_stream_start_started = False
+            time.sleep_ms(Sensor.VICAP_STOP_STREAM_DELAY_MS)
+
+        if self._vicap_init_started:
+            ret = kd_mpi_vicap_deinit(self._dev_id)
+            if ret:
+                raise RuntimeError(f"sensor({self._dev_id}) stop error, vicap deinit failed({ret})")
+            self._vicap_init_started = False
+            self.fd = -1
+
+        if self._vb_mgmt_registered:
+            ret = vb_mgmt_vicap_dev_deinited(self._dev_id)
+            if ret:
+                raise RuntimeError(f"sensor({self._dev_id}) stop error, unregister failed({ret})")
+            self._vb_mgmt_registered = False
+        self.fd = -1
+
+    def _rollback_failed_run(self):
+        """Preserve the original run error if rollback itself fails."""
+        try:
+            self._stop_vicap()
+        except BaseException as error:
+            print("sensor(%d) start rollback incomplete: %s" % (self._dev_id, error))
+
     def stop(self, is_del = False):
-        """Stop processing.
-        Args:
-            is_del: Value for is_del.
-        """
-        # if (self._dev_id > CAM_DEV_ID_MAX - 1):
-        #     raise AssertionError(f"invaild sensor id {self._dev_id}, should < {CAM_DEV_ID_MAX - 1}")
-
-        # is_del = kwargs.get('is_del', False)
-
+        """Release ownership only after native cleanup has succeeded."""
+        if Sensor._devs[self._dev_id] is not self:
+            return
         if not is_del and not self._dev_attr.dev_enable:
             raise AssertionError("should call reset() first")
 
-        cleanup_needed = (
-            self._vicap_init_started
-            or self._vicap_stream_start_started
-            or self._is_started
-        )
-        was_started = self._is_started
-
-        if not is_del and not cleanup_needed:
-            print("warning: sensor not call run()")
-
-        self._release_all_chn_image()
-
-        stop_error = 0
-        deinit_error = 0
-        if cleanup_needed:
-            if self._vicap_stream_start_started or was_started:
-                ret = kd_mpi_vicap_stop_stream(self._dev_id)
-                if ret:
-                    stop_error = ret
-
-                time.sleep_ms(Sensor.VICAP_STOP_STREAM_DELAY_MS)
-
-            if self._vicap_init_started:
-                ret = kd_mpi_vicap_deinit(self._dev_id)
-                if ret:
-                    deinit_error = ret
-
-            if self._vb_mgmt_registered and not deinit_error:
-                vb_mgmt_vicap_dev_deinited(self._dev_id)
+        try:
+            self._stop_vicap()
+        except Exception as error:
+            # Finalizers cannot report an exception to their caller, but they
+            # must not advertise a still-live CSI/device as available.
+            if not is_del:
+                raise
+            print("sensor(%d) cleanup incomplete: %s" % (self._dev_id, error))
+            return
 
         self._dev_attr.dev_enable = False
         self._is_started = False
         self._vicap_init_started = False
         self._vicap_stream_start_started = False
         self._vb_mgmt_registered = False
-
         Sensor._csis[self._csi_bus] = False
         Sensor._devs[self._dev_id] = None
-
-        # Preserve the old error behavior for a fully started sensor, but do
-        # not replace an IDE interrupt with a cleanup error for partial state.
-        if not is_del and was_started:
-            if stop_error:
-                raise RuntimeError(f"sensor({self._dev_id}) stop error, stop stream failed({stop_error})")
-            if deinit_error:
-                raise RuntimeError(f"sensor({self._dev_id}) stop error, vicap deinit failed({deinit_error})")
 
     def _set_chn_fps(self, chn = CAM_CHN_ID_0, fps = 30):
         """Internal helper method.

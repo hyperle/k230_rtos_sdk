@@ -10,6 +10,12 @@ static const mp_rom_map_elem_t dart_board_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_SC038HGS_MODE),
       MP_ROM_INT(SC038HGS_MIPI_CSI2_640X480_10BIT_LINEAR) },
 #endif
+#if defined(CONFIG_MPP_ENABLE_SENSOR_SC132GS) && defined(CONFIG_MPP_ENABLE_CSI_DEV_0)
+    { MP_ROM_QSTR(MP_QSTR_SC132GS_MODE),
+      MP_ROM_INT(SC132GS_MIPI_CSI0_1080X1280_120FPS_10BIT_LINEAR) },
+    { MP_ROM_QSTR(MP_QSTR_SC132GS_VGA_MODE),
+      MP_ROM_INT(SC132GS_MIPI_CSI0_640X480_240FPS_10BIT_LINEAR) },
+#endif
 };
 static MP_DEFINE_CONST_DICT(dart_board_globals, dart_board_globals_table);
 

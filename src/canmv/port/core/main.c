@@ -317,6 +317,25 @@ STATIC int do_repl(void) {
     #endif
 }
 
+/* Run the loaded Sensor class's strict cleanup while its VM is still alive.
+ * A failed stop must never fall through to GC, VB pool destruction, or a new VM. */
+static bool stop_sensors_before_vm_reset(void)
+{
+    nlr_buf_t nlr;
+    if (nlr_push(&nlr) == 0) {
+        mp_map_elem_t *module = mp_map_lookup(&MP_STATE_VM(mp_loaded_modules_dict).map,
+            MP_OBJ_NEW_QSTR(qstr_from_str("media.sensor")), MP_MAP_LOOKUP);
+        if (module != NULL) {
+            mp_obj_t sensor_class = mp_load_attr(module->value, MP_QSTR_Sensor);
+            mp_call_function_0(mp_load_attr(sensor_class, MP_QSTR_deinit));
+        }
+        nlr_pop();
+        return true;
+    }
+    mp_obj_print_exception(&mp_plat_print, (mp_obj_t)nlr.ret_val);
+    return false;
+}
+
 STATIC int do_str(const char *str) {
     repl_script_running_store(true);
     int ret = execute_from_str(str, strlen(str), MP_PARSE_FILE_INPUT);
@@ -559,6 +578,7 @@ soft_reset:
         }
     }
 
+service_repl:
     for (;;) {
         while (ide_dbg_has_script()) {
             repl_interrupt_store(false);
@@ -635,6 +655,21 @@ main_thread_exit:
     #if CONFIG_ENABLE_NETWORK_RT_WLAN
     network_rt_wlan_deinit();
     #endif
+
+    // mp_thread_shutdown_workers() already returns with the GIL held.
+    // Keep it through Sensor cleanup and VM teardown; a second acquisition
+    // here deadlocks the main thread before the first IDE script can run.
+    // The VM and all Python/native frame owners still exist on failure.
+    if (!stop_sensors_before_vm_reset()) {
+        mp_hal_stdout_tx_str("[camera] cleanup incomplete; soft reset deferred, resources retained\r\n");
+        system_set_exiting_flag(false);
+        repl_interrupt_store(false);
+        ide_dbg_clear_soft_reset_request();
+        #if MICROPY_PY_THREAD
+        mp_thread_set_main_ready(true);
+        #endif
+        goto service_repl;
+    }
 
     lv_deinit();
     py_media_vbmgmt_deinit_pre();

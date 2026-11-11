@@ -45,8 +45,10 @@ or the circuit controlled by a generic GPIO.
 | QSPI1 CS0 / CLK / D0 / D1 (`spi2`) | IO20 / IO21 / IO22 / IO23 |
 | SDIO1 CLK / CMD / D0 / D1 / D2 / D3 | IO26 / IO27 / IO28 / IO29 / IO30 / IO31 |
 | PWM0 / PWM1 / PWM2 / PWM3 / PWM5 | IO60 / IO61 / IO7 / IO8 / IO59 |
-| SC038HGS TRIG1 / PWDN | IO2 / IO4 |
-| Generic GPIO | IO3, IO5, IO6, IO10, IO18, IO19, IO24, IO25 |
+| SC132GS adapter EN / legacy SC038HGS TRIG1 | IO2 |
+| Legacy SC038HGS TRIG2 | IO3 |
+| Legacy SC038HGS PWDN | IO4 |
+| Generic GPIO | IO5, IO6, IO10, IO18, IO19, IO24, IO25 |
 | NC | IO13, IO62, IO63 |
 
 IO0/IO1 are configured for 1.8 V. The other GPIO banks in this DTS are
@@ -62,13 +64,36 @@ only D0/D1 for standard SPI, not D2/D3.
 SDIO1 is enabled because its signals are present in the supplied pinmux;
 it is not forced as the boot storage.
 
-## SC038HGS camera driver
+## SC132GS MicroPython camera
 
-The SC038HGS driver is enabled in this board's defconfig. It uses CSI2
+`k230d_canmv_dart_v1_defconfig` selects SC132GS on logical CSI0 with four
+MIPI data lanes, I2C1 (IO34/IO35), GPIO2 adapter enable and an external
+reference clock. The four data pairs share the physical CSI0/CSI1 groups;
+CSI1 is not a second sensor. GPIO4 is unused by this adapter. The default
+timing assumes 24 MHz; confirm the adapter oscillator frequency first.
+The existing vendor PLL tables and documented lane selector provide a
+bring-up configuration whose four-lane output still needs hardware validation.
+The direct-stacked adapter and main-board connector drawings label the CLK0
+pair oppositely. This profile enables the documented CSI0 clock-invert bit;
+see the [schematic review](SCHEMATIC_REVIEW.md) for pin numbers, assumptions
+and the hardware checks still needed.
+
+The frozen `dart_board` module exposes full-resolution and VGA camera
+constructors. The firmware includes the existing SC132GS ISP profiles and
+a VGA IDE preview example. See [MicroPython usage](MICROPYTHON.md) and
+[SC132GS wiring, register sources and validation](SC132GS.md).
+
+## SC038HGS legacy camera driver
+
+The SC038HGS driver remains enabled in `k230d_rtos_dart_v1_defconfig` and
+is available through menuconfig for MicroPython. Its FPC1 wiring uses CSI2
 (`CSI_CLK2/CSI_D4`), I2C1 on IO34/IO35, active-low PWDN on GPIO4 and an
 external 24 MHz oscillator. GPIO2/TRIG stays low; the driver disables
 external trigger and slave modes in the sensor. It does not program a
 K230 MCLK output.
+The supplied SC038HGS board drawing also has FPC2 on I2C2/CSI0, with GPIO3
+trigger and shared GPIO4 PWDN. The existing RTOS profile enables FPC1 only;
+it does not implement independent shutdown/reset for two simultaneous cameras.
 
 The driver probes addresses 0x30 through 0x33 for chip ID 0x1A79, observes
 the shutdown recovery delay, and implements a documented reset-default
@@ -107,9 +132,9 @@ test commands and hardware bring-up checks.
 ## Other board peripherals
 
 - Gyroscope SPI uses QSPI0 (`spi1` / controller ID 1):
-  CS/CLK/MOSI/MISO = GPIO14/15/16/17. Its device model, SPI mode, maximum
-  clock and register initialization must be supplied by the device driver
-  or application.
+  CS/CLK/MOSI/MISO = GPIO14/15/16/17. The supplied IMU drawing identifies
+  IIM-42652; its register driver, SPI mode and clock configuration must still
+  be supplied by the application.
 - Servo outputs use PWM1/PWM2/PWM3/PWM5 = GPIO61/7/8/59. PWM0 on GPIO60
   is available for uses with a compatible frequency: PWM0/1/2 share one
   period, PWM3/4/5 share another. Set a common period per group and adjust

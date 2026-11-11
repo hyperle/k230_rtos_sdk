@@ -29,6 +29,8 @@
 #include "py/gc.h"
 #include "py/mpstate.h"
 
+#include "ide_dbg.h"
+
 #if MICROPY_ENABLE_GC
 
 static inline __attribute__((always_inline)) void* get_sp(void)
@@ -56,6 +58,8 @@ void gc_collect(void)
 {
     gc_collect_start();
     gc_collect_inner(0);
+    // Static IDE exception: keep its heap traceback alive while it propagates.
+    ide_dbg_gc_collect_roots();
 #if MICROPY_PY_THREAD
     mp_thread_gc_others();
 #endif

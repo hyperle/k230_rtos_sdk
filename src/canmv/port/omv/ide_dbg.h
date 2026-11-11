@@ -239,6 +239,8 @@ void ide_dbg_vtouch_close(void);
 bool ide_dbg_vtouch_is_enabled(void);
 void ide_dbg_vtouch_clear(void);
 uint32_t ide_dbg_vtouch_read(struct ide_dbg_vtouch_event *out, uint32_t max_events);
+// Mark heap blocks referenced by the static "IDE interrupt" exception.
+void ide_dbg_gc_collect_roots(void);
 
 #else // !CONFIG_CANMV_IDE_SUPPORT
 
@@ -270,6 +272,7 @@ static inline void ide_dbg_vtouch_close(void) {}
 static inline bool ide_dbg_vtouch_is_enabled(void) { return false; }
 static inline void ide_dbg_vtouch_clear(void) {}
 static inline uint32_t ide_dbg_vtouch_read(void *out, uint32_t max_events) { (void)out; (void)max_events; return 0; }
+static inline void ide_dbg_gc_collect_roots(void) {}
 
 #endif // CONFIG_CANMV_IDE_SUPPORT
 

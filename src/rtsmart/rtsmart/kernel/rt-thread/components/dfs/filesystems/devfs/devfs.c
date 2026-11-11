@@ -64,9 +64,16 @@ int dfs_device_fs_read(struct dfs_fd *file, void *buf, size_t count)
 
     if ((file->fnode->path[0] == '/') && (file->fnode->path[1] == '\0'))
         return -RT_ENOSYS;
+    /* RT-Thread block drivers count sectors; POSIX streams count bytes.
+     * Passing count straight through can DMA count * sector_size bytes into
+     * a count-byte buffer. Raw block access needs a sector-aware API. */
+    if (dev_id->type == RT_Device_Class_Block)
+        return count == 0 ? 0 : -ENOSYS;
+
     /* read device data */
     result = rt_device_read(dev_id, file->pos, buf, count);
-    file->pos += result;
+    if (result > 0)
+        file->pos += result;
 
     return result;
 }
@@ -85,9 +92,16 @@ int dfs_device_fs_write(struct dfs_fd *file, const void *buf, size_t count)
     if ((file->fnode->path[0] == '/') && (file->fnode->path[1] == '\0'))
         return -RT_ENOSYS;
 
+    /* RT-Thread block drivers count sectors; POSIX streams count bytes.
+     * Passing count straight through can DMA count * sector_size bytes into
+     * a count-byte buffer. Raw block access needs a sector-aware API. */
+    if (dev_id->type == RT_Device_Class_Block)
+        return count == 0 ? 0 : -ENOSYS;
+
     /* read device data */
     result = rt_device_write(dev_id, file->pos, buf, count);
-    file->pos += result;
+    if (result > 0)
+        file->pos += result;
 
     return result;
 }

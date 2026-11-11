@@ -231,11 +231,15 @@ mp_obj_t machine_i2c_make_new(const mp_obj_type_t* type, size_t n_args, size_t n
             mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("create i2c obj failed"));
         }
     } else {
-        drv_i2c_set_freq(self->inst, freq);
-        drv_i2c_set_timeout(self->inst, timeout_ms);
+        if (drv_i2c_set_freq(self->inst, freq) != 0
+            || drv_i2c_set_timeout(self->inst, timeout_ms) != 0) {
+            mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("configure i2c failed"));
+        }
     }
 
-    drv_i2c_set_7b_addr(self->inst);
+    if (drv_i2c_set_7b_addr(self->inst) != 0) {
+        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("set i2c address mode failed"));
+    }
 
     return MP_OBJ_FROM_PTR(self);
 }

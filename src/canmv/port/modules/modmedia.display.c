@@ -285,6 +285,14 @@ static int py_display_is_panel_rotated(k_connector_type type)
     k_u32 vo_width, vo_height;
     int   panel_width, panel_height;
 
+    /* kd_display_init_ex() never rotates a virtual display. Its static
+     * connector descriptor reports 0x0, so comparing it with the requested
+     * VO size misdetected rotation and forced a single OSD buffer that the
+     * CPU overwrote while VO/WBC were still reading it. */
+    if (VIRTUAL_DISPLAY_DEVICE == type) {
+        return 0;
+    }
+
     if (0x00 != py_display_get_connector_resolution(type, &panel_width, &panel_height)) {
         return -1;
     }
@@ -861,11 +869,15 @@ static int py_display_show_image_to_buffer(k_vo_layer_id layer, image_t* image, 
     phy_addr = buffer->vf_info.v_frame.phys_addr[0];
 
     if (img_size > buffer->buffer_size) {
-        img_size = buffer->buffer_size;
+        printf("[py_display] image exceeds layer buffer; frame not submitted\n");
+        return -1;
     }
 
     hal_rvv_memcpy(buffer->buffer_addr, image->data, img_size);
-    kd_mpi_sys_mmz_flush_cache(phy_addr, buffer->buffer_addr, buffer->buffer_size);
+    if (kd_mpi_sys_mmz_flush_cache(phy_addr, buffer->buffer_addr, buffer->buffer_size) != 0) {
+        printf("[py_display] flush layer cache failed; frame not submitted\n");
+        return -1;
+    }
 
     return kd_display_layer_push_frame(layer, &buffer->vf_info);
 }
@@ -886,7 +898,10 @@ static int py_display_show_image_direct(k_vo_layer_id layer, image_t* image, k_p
 
     img_size = image_size(image);
 
-    kd_mpi_sys_mmz_flush_cache(pa, va, img_size);
+    if (kd_mpi_sys_mmz_flush_cache(pa, (void *)(uintptr_t)va, img_size) != 0) {
+        printf("[py_display] flush direct image cache failed; frame not submitted\n");
+        return -1;
+    }
 
     vf_info.mod_id               = K_ID_VO;
     vf_info.pool_id              = image->pool_id;
