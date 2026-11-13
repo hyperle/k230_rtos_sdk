@@ -25,7 +25,7 @@ typedef struct vb_mgmt_dump_vicap_config {
 typedef struct vb_mgmt_vicap_image {
     k_u64 magic;
 
-    k_u64 image_size;
+    k_u64 image_size; // bytes mapped, invalidated and flushed: the padded hardware frame
     vb_mgmt_dump_vicap_config cfg;
     k_video_frame_info vf_info;
 } vb_mgmt_vicap_image;
@@ -57,5 +57,8 @@ struct vb_mgmt_dump_vicap_config;
 struct vb_mgmt_vicap_image;
 k_s32 vb_mgmt_dump_vicap_frame(vb_mgmt_dump_vicap_config *cfg, vb_mgmt_vicap_image *image);
 k_s32 vb_mgmt_release_vicap_frame(vb_mgmt_vicap_image *image);
+/* Compact rows written at the hardware pitch so the mapping holds a dense
+ * width * height image. Idempotent; only needed before wrapping pixels. */
+k_s32 vb_mgmt_pack_vicap_frame(vb_mgmt_vicap_image *image);
 
 extern void vb_mgmt_py_at_exit(void);

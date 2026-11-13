@@ -431,10 +431,13 @@ class Sensor:
             raise RuntimeError(f"sensor({self._dev_id}) chn({chn}) frame size not set before run")
 
         buf_size = 0
+        # The ISP writes rows at a 16-pixel pitch (mpp_vb_mgmt.c); a 1080-wide
+        # RGB888 frame occupies 1088 * height * 3 bytes, not 1080 * height * 3.
+        pitch = ALIGN_UP(out_width, 16)
         if pix_format == PIXEL_FORMAT_YUV_SEMIPLANAR_420:
-            buf_size = ALIGN_UP((out_width * out_height * 3 // 2), VICAP_ALIGN_4K)
+            buf_size = ALIGN_UP((pitch * out_height * 3 // 2), VICAP_ALIGN_4K)
         elif pix_format in [PIXEL_FORMAT_RGB_888, PIXEL_FORMAT_RGB_888_PLANAR]:
-            buf_size = ALIGN_UP((out_width * out_height * 3), VICAP_ALIGN_4K)
+            buf_size = ALIGN_UP((pitch * out_height * 3), VICAP_ALIGN_4K)
         elif pix_format in [PIXEL_FORMAT_RGB_BAYER_10BPP, PIXEL_FORMAT_RGB_BAYER_12BPP, \
                             PIXEL_FORMAT_RGB_BAYER_14BPP, PIXEL_FORMAT_RGB_BAYER_16BPP]:
             # For Bayer formats, it often uses the acquisition window size for the buffer
@@ -694,7 +697,14 @@ class Sensor:
             self._reset_snapshot_failure_state()
 
         if dump_frame:
+            # Raw hardware frame: rows stay at the 16-pixel pitch.
             return py_video_frame_info(dumped_img.vf_info)
+
+        # image.Image needs dense rows; widths that are not multiples of 16
+        # arrive padded. The frame stays owned by self._imgs on failure.
+        ret = vb_mgmt_pack_vicap_frame(dumped_img)
+        if ret != 0:
+            raise RuntimeError(f"sensor({self._dev_id}) snapshot chn({chn}) pack frame failed({ret})")
 
         phys_addr = dumped_img.vf_info.v_frame.phys_addr[0]
         virt_addr = dumped_img.vf_info.v_frame.virt_addr[0]
@@ -917,9 +927,12 @@ class Sensor:
         else:
             width, height = Sensor._parse_framesize(framesize)
 
-        if width % 16 != 0:
+        if width % 16 != 0 and ALIGN_UP(width, 16) <= self._dev_attr.acq_win.width:
             width = ALIGN_UP(width, 16)
             print(f"Warning: sensor({self._dev_id}) chn({chn}) set_framesize align up width to {width}")
+        # Otherwise keep the width, e.g. a sensor's native 1080: the ISP pads
+        # rows to a 16-pixel pitch, sized in _calculate_buffer_size and packed
+        # by snapshot().
 
         if width > self._dev_attr.acq_win.width or width < CAM_OUT_WIDTH_MIN:
             raise AssertionError(f"sensor({self._dev_id}) chn({chn}) set_framesize invaild width({width}), should be {CAM_OUT_WIDTH_MIN} - {self._dev_attr.acq_win.width}")

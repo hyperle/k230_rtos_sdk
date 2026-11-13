@@ -1,6 +1,6 @@
 # CANMV Source-Wide Unit Test Suggestions
 
-Auto-generated on 2026-11-11 12:14:21 UTC.
+Auto-generated on 2026-11-12 16:55:59 UTC.
 
 | Source File | Suggested Unit Test Focus | Priority |
 | --- | --- | --- |

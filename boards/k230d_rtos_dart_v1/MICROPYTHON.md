@@ -170,6 +170,26 @@ I2C 传输、模式尺寸和位宽回读失败仍会上报，不将缺失的相�
 I2C 探测示例为 `/sdcard/examples/dart/camera_probe.py`；读到 ID 不能证明 MIPI 采图成功。
 原理图接线、寄存器依据和驱动测试见 [SC132GS.md](SC132GS.md)。
 
+### 非 16 倍数宽度的行距（PITCH_FIX）
+
+VICAP ISP 以宽度向上对齐到 16 像素的行距写 RGB888 和 YUV420：2026-11-13 板上读回，
+1080 宽的行间隔为 1088 像素，528、544 宽不填充，YUV420 的 UV 平面从
+`phys_addr[1] = 行距 × 高度` 开始；而帧的 `stride` 字段报告的仍是可见宽度。
+此前 `set_framesize()` 把 1080 对齐为 1088 后超过传感器宽度而拒绝，绕过它时
+`_calculate_buffer_size()` 按 1080 分配，每帧约越界 28 KiB，图像也按错误行距解释。
+
+本固件中：`set_framesize()` 只在对齐后不超过采集宽度时才对齐，否则保留请求宽度；
+缓冲区按行距计算；`mpp_vb_mgmt.c` 映射、失效和刷新整帧的行距范围，
+新增 `vb_mgmt_pack_vicap_frame()` 在原地压紧各行，`snapshot()` 包装图像前调用它。
+`snapshot(dump_frame=True)` 仍返回硬件行距的原始帧，读取时按 `ALIGN_UP(width, 16)` 计算行距，
+不要使用帧的 `stride` 字段。宽度为 16 倍数时行为不变。主机测试为
+`unit_test` 的 `canmv_vicap_padding_tests` 与 `SensorPitchTest`；这些只验证布局模型。
+2026-11-13 刷入本固件后：宽度为 16 倍数的 480 × 640 RGB565 正常（开虚拟显示预览 103.6 fps，
+无预览 119.8 fps）；1080 × 1280 时 `set_framesize()` 接受宽度、缓冲区为 4177920 字节，
+但单路 RGB565 取帧超时，ISP 停住且 `sensor.stop()` 卡死，需要复位，未能取得压紧后的图像。
+旧固件上 1080 宽输出叠加第二路缩放通道或虚拟显示预览时同样停住；只取帧、不写帧的单路
+1080 宽 RGB888 多次正常。原因尚未定位（推测为离线 ISP 在 120 fps 下的内存带宽）。
+
 ## SC038HGS 兼容配置
 
 旧相机驱动仍可在 menuconfig 中选择：关闭 SC132GS/CSI0，选择默认 CSI2、

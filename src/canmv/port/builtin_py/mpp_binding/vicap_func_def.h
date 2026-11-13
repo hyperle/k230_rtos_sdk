@@ -45,3 +45,4 @@ DEF_INT_FUNC_INT_STRUCTPTR(kd_mpi_sensor_again_get, k_sensor_gain)
 
 DEF_INT_FUNC_STRUCTPTR_STRUCTPTR(vb_mgmt_dump_vicap_frame, vb_mgmt_dump_vicap_config, vb_mgmt_vicap_image)
 DEF_INT_FUNC_STRUCTPTR(vb_mgmt_release_vicap_frame, vb_mgmt_vicap_image)
+DEF_INT_FUNC_STRUCTPTR(vb_mgmt_pack_vicap_frame, vb_mgmt_vicap_image)

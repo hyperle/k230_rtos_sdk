@@ -89,6 +89,24 @@ target_link_libraries(canmv_vicap_buffer_tests PRIVATE
 )
 gtest_discover_tests(canmv_vicap_buffer_tests DISCOVERY_TIMEOUT 60)
 
+# Padded rows: the ISP writes widths that are not multiples of 16 at a 16-pixel pitch.
+add_executable(canmv_vicap_padding_tests
+    tests/test_vicap_padding.cpp
+    "${CANMV_ROOT}/port/core/mpp_vb_mgmt.c"
+)
+target_compile_definitions(canmv_vicap_padding_tests PRIVATE _DEFAULT_SOURCE)
+target_include_directories(canmv_vicap_padding_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs"
+    "${CANMV_ROOT}/port/include/core"
+    "${CANMV_ROOT}/../rtsmart/mpp/userapps/api"
+    "${CANMV_ROOT}/../rtsmart/mpp/include"
+    "${CANMV_ROOT}/../rtsmart/mpp/include/comm"
+)
+target_link_libraries(canmv_vicap_padding_tests PRIVATE
+    GTest::gtest GTest::gtest_main Threads::Threads
+)
+gtest_discover_tests(canmv_vicap_padding_tests DISCOVERY_TIMEOUT 60)
+
 # Exercise the production IDE encoder with frame ownership enforced by MPI mocks.
 add_executable(canmv_wbc_buffer_tests
     tests/test_wbc_buffer.cpp
@@ -113,6 +131,10 @@ gtest_discover_tests(canmv_wbc_buffer_tests DISCOVERY_TIMEOUT 60)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME SensorBufferTest
     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_sensor_buffer.py"
+)
+
+add_test(NAME SensorPitchTest
+    COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_sensor_pitch.py"
 )
 
 add_test(NAME DevfsBlockIoTest
