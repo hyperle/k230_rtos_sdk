@@ -44,8 +44,10 @@ or the circuit controlled by a generic GPIO.
 | QSPI1 CS0 / CLK / D0 / D1 (`spi2`) | IO20 / IO21 / IO22 / IO23 |
 | SDIO1 CLK / CMD / D0 / D1 / D2 / D3 | IO26 / IO27 / IO28 / IO29 / IO30 / IO31 |
 | PWM0 / PWM1 / PWM2 / PWM3 / PWM5 | IO60 / IO61 / IO7 / IO8 / IO59 |
-| SC038HGS TRIG1 / PWDN | IO2 / IO4 |
-| Generic GPIO | IO3, IO5, IO6, IO10, IO18, IO19, IO24, IO25 |
+| SC132GS adapter EN / legacy SC038HGS TRIG1 | IO2 |
+| Legacy SC038HGS TRIG2 | IO3 |
+| Legacy SC038HGS PWDN | IO4 |
+| Generic GPIO | IO5, IO6, IO10, IO18, IO19, IO24, IO25 |
 | NC | IO13, IO62, IO63 |
 
 IO0/IO1 are configured for 1.8 V. The other GPIO banks in this DTS are
@@ -61,9 +63,30 @@ only D0/D1 for standard SPI, not D2/D3.
 SDIO1 is enabled because its signals are present in the supplied pinmux;
 it is not forced as the boot storage.
 
-## SC038HGS camera driver
+## SC132GS camera
 
-The SC038HGS driver is enabled in this board's defconfig. It uses CSI2
+`k230d_rtos_dart_v1_defconfig` selects the SC132GS adapter, using the same
+MPP settings as the MicroPython profile: logical CSI0 with four MIPI data
+lanes (`MPP_SC132GS_CSI0_4LANE`), I2C1 (IO34/IO35), GPIO2 active-high
+adapter enable, no reset GPIO and no K230 MCLK output (external 24 MHz Y1).
+The four data pairs occupy the physical CSI0/CSI1 groups; CSI1 is not a
+second sensor and `MPP_ENABLE_CSI_DEV_1` stays unset. The driver binds the
+known module at 0x30 without chip-ID matching
+(`MPP_SC132GS_SKIP_CHIP_ID_CHECK`) and leaves CSI0 clock inversion off.
+
+Device: `/dev/sensor_sc132gs_csi0`. Modes:
+`SC132GS_MIPI_CSI0_1080X1280_120FPS_10BIT_LINEAR` and
+`SC132GS_MIPI_CSI0_640X480_240FPS_10BIT_LINEAR`; user-space sensor info
+reports four lanes for both. The image installs the existing generic
+`sc132gs-1080x1280` / `sc132gs-640x480` ISP databases in the BIN partition;
+they are not calibrated for the 120-degree lens. RT-Smart applications
+written for SC038HGS must be adapted to these sensor names and modes.
+See [SC132GS wiring, register sources and validation](SC132GS.md).
+
+## SC038HGS legacy camera driver
+
+The SC038HGS driver remains available in menuconfig, but is no longer
+enabled in this board's defconfig. Its original hardware uses CSI2
 (`CSI_CLK2/CSI_D4`), I2C1 on IO34/IO35, active-low PWDN on GPIO4 and an
 external 24 MHz oscillator. GPIO2/TRIG stays low; the driver disables
 external trigger and slave modes in the sensor. It does not program a

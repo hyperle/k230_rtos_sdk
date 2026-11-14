@@ -1,68 +1,6 @@
-// sensor ae info
 static k_sensor_ae_info sensor_csi1_ae_info[] = {
-    // 1080P30 
-     {
-        .frame_length = 0x486,
-        .cur_frame_length = 0x486,
-        .one_line_exp_time = 0.000014,
-        .gain_accuracy = 1024,
-        .min_gain = 1,
-        .max_gain = 28.547,
-        .int_time_delay_frame = 2,
-        .gain_delay_frame = 2,
-        .color_type = SENSOR_COLOR,
-        .integration_time_increment = 0.000014,
-        .gain_increment = SC132GS_MIN_GAIN_STEP,
-        .max_integraion_line = 0x486 - 8,
-        .min_integraion_line = 1,
-        .max_integraion_time = 0.000014 * (0x486 - 8),
-        .min_integraion_time = 0.000014 * 1,
-        .cur_integration_time = 0.0,
-        .cur_again = 1.0,
-        .cur_dgain = 1.0,
-        .a_gain = {
-            .min = 1.0,
-            .max = 15.5,
-            .step = (1.0f/128.0f),
-        },
-        .d_gain = {
-            .min = 1.0,
-            .max = 15.5,
-            .step = (1.0f/1024.0f),
-        },
-        .cur_fps = 120,
-    },
-    {
-        .frame_length = 0x486,
-        .cur_frame_length = 0x486,
-        .one_line_exp_time = 0.000014,
-        .gain_accuracy = 1024,
-        .min_gain = 1,
-        .max_gain = 28.547,
-        .int_time_delay_frame = 4,
-        .gain_delay_frame = 4,
-        .color_type = SENSOR_MONO,
-        .integration_time_increment = 0.000014,
-        .gain_increment = SC132GS_MIN_GAIN_STEP,
-        .max_integraion_line = 0x486 - 8,
-        .min_integraion_line = 1,
-        .max_integraion_time = 0.000014 * (0x486 - 8),
-        .min_integraion_time = 0.000014 * 1,
-        .cur_integration_time = 0.0,
-        .cur_again = 1.0,
-        .cur_dgain = 1.0,
-        .a_gain = {
-            .min = 1.0,
-            .max = 15.5,
-            .step = (1.0f/128.0f),
-        },
-        .d_gain = {
-            .min = 1.0,
-            .max = 15.5,
-            .step = (1.0f/1024.0f),
-        },
-        .cur_fps = 240,
-    },
+    SC132GS_AE_DEFAULTS(1350, 120),
+    SC132GS_AE_DEFAULTS(675, 240),
 };
 
 static const k_sensor_mode sensor_csi1_mode_list[] = {
@@ -82,18 +20,18 @@ static const k_sensor_mode sensor_csi1_mode_list[] = {
         .bit_width = 10,
         .bayer_pattern = BAYER_PAT_BGGR,//BAYER_PAT_GRBG, //BAYER_PAT_RGGB,
         .mipi_info = {
-            .csi_id = 0,
+            .csi_id = 1,
             .mipi_lanes = 2,
             .data_type = 0x2B,
         },
-        .reg_list = sc132gs_mipi_2lane_1080x1280_120fps_init,
+        .reg_list = sc132gs_mipi_1080x1280_120fps_init,
 #if defined (CONFIG_MPP_ENABLE_SENSOR_SC132GS_ON_CSI1_USE_CHIP_CLK)
         .mclk_setting = {
             {
                 .mclk_setting_en = K_TRUE,
                 .setting.id = CONFIG_MPP_CSI_DEV1_MCLK_NUM,
                 .setting.mclk_sel = SENSOR_PLL1_CLK_DIV4,
-                .setting.mclk_div = 25,	// 594/25 = 23.76MHz
+                .setting.mclk_div = 25,
             },
             {K_FALSE},
             {K_FALSE},
@@ -125,18 +63,18 @@ static const k_sensor_mode sensor_csi1_mode_list[] = {
         .bit_width = 10,
         .bayer_pattern = BAYER_PAT_BGGR,//BAYER_PAT_GRBG, //BAYER_PAT_RGGB,
         .mipi_info = {
-            .csi_id = 0,
+            .csi_id = 1,
             .mipi_lanes = 2,
             .data_type = 0x2B,
         },
-        .reg_list = sc132gs_mipi_2lane_640x480_init, 
+        .reg_list = sc132gs_mipi_640x480_240fps_init,
 #if defined (CONFIG_MPP_ENABLE_SENSOR_SC132GS_ON_CSI1_USE_CHIP_CLK)
         .mclk_setting = {
             {
                 .mclk_setting_en = K_TRUE,
                 .setting.id = CONFIG_MPP_CSI_DEV1_MCLK_NUM,
                 .setting.mclk_sel = SENSOR_PLL1_CLK_DIV4,
-                .setting.mclk_div = 24,	// 594/25 = 23.76MHz
+                .setting.mclk_div = 25,
             },
             {K_FALSE},
             {K_FALSE},

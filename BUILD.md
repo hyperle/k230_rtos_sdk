@@ -66,6 +66,11 @@ also includes CanMV, the interpreter, and its resources.
    # make k230d_rtos_dart_v1_defconfig  # dart_control_board branch
    ```
 
+   Reapply the matching defconfig after switching firmware branches: Git ignores
+   `.config`, which can retain the previous branch's settings. Both Dart profiles
+   use the SC132GS four-lane adapter on logical CSI0; see the
+   [board guide](boards/k230d_rtos_dart_v1/README.md) for camera setup.
+
 4. **Start the build process**:
 
    ```bash

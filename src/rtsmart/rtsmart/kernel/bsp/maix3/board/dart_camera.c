@@ -8,26 +8,30 @@
 
 #include "drv_gpio.h"
 
-#define DART_CAMERA_TRIG1_GPIO 2
+#define DART_CAMERA_CONTROL_GPIO 2
+#ifdef CONFIG_MPP_ENABLE_SENSOR_SC038HGS
 #define DART_CAMERA_PWDN_GPIO  4
+#endif
 
 static int dart_camera_pin_init(void)
 {
     rt_err_t ret;
 
-    /* Free-running capture: do not generate external trigger pulses. */
-    ret = kd_pin_mode(DART_CAMERA_TRIG1_GPIO, GPIO_DM_OUTPUT);
+    ret = kd_pin_mode(DART_CAMERA_CONTROL_GPIO, GPIO_DM_OUTPUT);
     if (ret != RT_EOK)
         return ret;
-    ret = kd_pin_write(DART_CAMERA_TRIG1_GPIO, GPIO_PV_LOW);
+    ret = kd_pin_write(DART_CAMERA_CONTROL_GPIO, GPIO_PV_LOW);
     if (ret != RT_EOK)
         return ret;
 
-    /* This board powers SC038HGS down at low level and enables it at high. */
+#ifdef CONFIG_MPP_ENABLE_SENSOR_SC038HGS
     ret = kd_pin_mode(DART_CAMERA_PWDN_GPIO, GPIO_DM_OUTPUT);
     if (ret != RT_EOK)
         return ret;
     return kd_pin_write(DART_CAMERA_PWDN_GPIO, GPIO_PV_HIGH);
+#else
+    return RT_EOK;
+#endif
 }
 
 /* After kd_pin_init (device sequence 010), before MPP sensor probing. */

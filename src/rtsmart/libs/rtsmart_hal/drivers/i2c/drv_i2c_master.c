@@ -127,12 +127,20 @@ int drv_i2c_inst_create(int id, uint32_t freq, uint32_t timeout_ms, uint8_t scl,
     (*inst)->fd         = fd;
     (*inst)->pin_scl    = soft_scl;
     (*inst)->pin_sda    = soft_sda;
-    (*inst)->freq       = freq;
-    (*inst)->timeout_ms = timeout_ms;
-
     if (DRV_I2C_TYPE_HARD == dev_type) {
+        /* Program the controller before caching the requested values. Otherwise
+         * the same-value setters skip the first clock/timeout configuration. */
+        if (drv_i2c_ioctl(*inst, RT_I2C_DEV_CTRL_CLK, &freq) != 0
+            || drv_i2c_ioctl(*inst, RT_I2C_DEV_CTRL_TIMEOUT, &timeout_ms) != 0) {
+            printf("[hal_i2c]: initial controller configuration failed\n");
+            drv_i2c_inst_destroy(inst);
+            return -1;
+        }
         hard_i2c_in_use[id] = 1;
     }
+
+    (*inst)->freq       = freq;
+    (*inst)->timeout_ms = timeout_ms;
 
     return 0;
 }
