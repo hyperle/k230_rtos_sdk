@@ -8,8 +8,12 @@
 - Console: UART0, IO38/IO39, 115200 baud.
 - U-Boot is built from source. Its board target and device tree are both
   `k230d_rtos_dart_v1`.
-- DDR uses the existing K230D SiP LPDDR4 1600 NODT implementation selected
-  in the original board configuration. Validate this setting on hardware.
+- DDR uses the K230D SiP LPDDR4 2667 implementation, the SoC default that
+  most K230D boards use. The original configuration (copied from the LabPlus
+  AI camera) ran 1600 NODT. On 2026-11-16 that bandwidth proved too low for
+  SC132GS native 1080x1280 RGB888 at 120 fps: with the CPU copying about
+  4 MiB per frame, the ISP dropped every third frame (80 fps), while it
+  delivered all 120 fps with the CPU idle.
 - RT-Smart inherits the U-Boot pinmux and uses software RTC, consistent
   with this board's `BOARD_NOT_SUPPORT_HW_RTC` declaration.
 - `k230d_rtos_dart_v1_defconfig` runs RT-Smart applications with CanMV
