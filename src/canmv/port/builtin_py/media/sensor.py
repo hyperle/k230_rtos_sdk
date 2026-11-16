@@ -505,8 +505,11 @@ class Sensor:
             if self._dev_attr.sensor_info.width == 640 and self._dev_attr.sensor_info.height == 480:
                 self._dev_attr.pipe_ctrl.bits.ae_enable = 0 # disable ae
                 self._dev_attr.pipe_ctrl.bits.dnr3_enable = 0 # disable 3dnr
-            elif self._dev_attr.sensor_info.width == 1080 and self._dev_attr.sensor_info.height == 1280:
-                self._set_inbufs()
+            # The 1080x1280 mode keeps the online mode chosen above. Offline
+            # wrote and re-read every RAW frame through DDR (about 5.5 MB per
+            # frame); on the Dart RT-Smart backend (same VICAP/ISP libraries,
+            # 2026-11-16) native RGB888 output then lost frames, while online
+            # sustained 120 fps at 480x640 and native 1080x1280.
 
         Sensor._handle_mcm_device()
 
